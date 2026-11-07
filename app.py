@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import requests
 
 from io import BytesIO
 from scipy.optimize import linprog
@@ -1300,16 +1301,69 @@ def create_excel(final_matrix, course_code):
 
 
 # ==========================================================
-# DOWNLOAD EXCEL
+# SAVE FINAL MATRIX TO GOOGLE SHEETS
 # ==========================================================
 
-# Download is available only when the final matrix exists
+
+def save_to_google_sheets(final_matrix, course_code, department, course_name):
+
+    try:
+        script_url = st.secrets["GOOGLE_SCRIPT_URL"]
+        secret_token = st.secrets["GOOGLE_SECRET_TOKEN"]
+    except (KeyError, FileNotFoundError):
+        st.error("Google Sheets connection details are missing.")
+        return
+
+    df = final_matrix.copy()
+
+    # round to 2 decimals so cells show clean numbers
+    num_cols = df.columns.drop("Assessment")
+    df[num_cols] = df[num_cols].astype(float).round(2)
+
+    # add Course Code as the first column (blank on the TOTAL row)
+    df.insert(
+        0, "Course Code",
+        [course_code if a != "TOTAL" else "" for a in df["Assessment"]]
+    )
+
+    payload = {
+        "token": secret_token,
+        "department": department,
+        "course_name": course_name,
+        "course_code": course_code,
+        "headers": df.columns.tolist(),
+        "rows": df.astype(object).where(pd.notna(df), None).values.tolist()
+    }
+
+    try:
+        response = requests.post(script_url, json=payload, timeout=30)
+        response.raise_for_status()
+        result = response.json()
+
+        if result.get("status") == "success":
+            st.success("Saved to Google Sheets successfully.")
+        else:
+            st.error("Google Sheets could not save the data: "
+                     + str(result.get("message", "Unknown error")))
+
+    except requests.exceptions.RequestException as error:
+        st.error(f"Could not connect to Google Sheets: {error}")
+    except ValueError:
+        st.error("Apps Script returned an unexpected response.")
+
+# ==========================================================
+# SAVE TO GOOGLE SHEETS AND DOWNLOAD EXCEL
+# ==========================================================
+
 if result_df is not None:
 
-    excel_data = create_excel(
-        result_df,
-        course_code
-    )
+    st.write("DEBUG: Final matrix exists:", result_df is not None)
+
+    # Save to Google Sheets
+    if st.button("Save to Google Sheets", key="save_to_google_sheets"):
+        save_to_google_sheets(result_df, course_code, department, program)
+    # Download Excel
+    excel_data = create_excel(result_df, course_code)
 
     st.download_button(
         label="Download Excel",
