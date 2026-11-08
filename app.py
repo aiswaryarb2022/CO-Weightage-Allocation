@@ -4,7 +4,7 @@ import numpy as np
 import requests
 
 from io import BytesIO
-from scipy.optimize import linprog
+from scipy.optimize import linprog, minimize
 from openpyxl.styles import Font, PatternFill, Alignment
 
 
@@ -719,7 +719,7 @@ for j, (name, exam_max, selected_cos, co_pcts) in enumerate(
 
 
 # ==================================================
-# ALLOCATION FUNCTION
+# ALLOCATION FUNCTION - LEAST SQUARES OPTIMISATION
 # ==================================================
 
 def calculate_final_allocation():
@@ -734,88 +734,74 @@ def calculate_final_allocation():
         for co in co_list
     ], dtype=float)
 
-    # Check that every CO with positive target is selected
+    n = n_co * n_assessments
+
+    seed = initial_matrix.flatten()
+
+    # Check total consistency
+    if not np.isclose(
+        assessment_targets.sum(),
+        co_target_array.sum(),
+        atol=0.01
+    ):
+        return None, "Assessment and CO totals do not match."
+
+    # Check whether every positive CO target is selected
     for i, co in enumerate(co_list):
 
         if co_target_array[i] > 0 and not allowed[i, :].any():
 
             return None, (
-                f"{co} has a positive target weight but is not "
-                "selected in any assessment."
+                f"{co} has a positive target but is not selected "
+                "in any assessment."
             )
 
-    # Check that each positive assessment has a selected CO
+    # Check whether every positive assessment has a selected CO
     for j, assessment in enumerate(ASSESSMENT_NAMES):
 
         if assessment_targets[j] > 0 and not allowed[:, j].any():
 
             return None, (
-                f"{assessment} has a positive weight but no CO is selected."
+                f"{assessment} has positive marks but no CO is selected."
             )
 
-    # Variables:
-    # First n variables = allocation values
-    # Next n variables = absolute deviations from entered allocation
-
-    n = n_co * n_assessments
-
-    seed = initial_matrix.flatten()
-
-    objective = np.concatenate([
-        np.zeros(n),
-        np.ones(n)
-    ])
+    # --------------------------------------------------
+    # CREATE EQUALITY CONSTRAINTS
+    # --------------------------------------------------
 
     A_eq = []
     b_eq = []
 
-    # Assessment row constraints
+    # Assessment row totals
     for j in range(n_assessments):
 
-        constraint = np.zeros(2 * n)
+        row = np.zeros(n)
 
         for i in range(n_co):
+            row[i * n_assessments + j] = 1
 
-            constraint[i * n_assessments + j] = 1
-
-        A_eq.append(constraint)
-
+        A_eq.append(row)
         b_eq.append(assessment_targets[j])
 
-    # CO column constraints
-    for i in range(n_co):
+    # CO column totals
+    # Last CO constraint is omitted because it is redundant.
+    for i in range(n_co - 1):
 
-        constraint = np.zeros(2 * n)
+        row = np.zeros(n)
 
         for j in range(n_assessments):
+            row[i * n_assessments + j] = 1
 
-            constraint[i * n_assessments + j] = 1
-
-        A_eq.append(constraint)
-
+        A_eq.append(row)
         b_eq.append(co_target_array[i])
 
-    A_ub = []
-    b_ub = []
+    A_eq = np.array(A_eq)
+    b_eq = np.array(b_eq)
 
-    # Absolute deviation constraints
-    for k in range(n):
+    # --------------------------------------------------
+    # BOUNDS
+    # --------------------------------------------------
 
-        row1 = np.zeros(2 * n)
-        row1[k] = 1
-        row1[n + k] = -1
-
-        A_ub.append(row1)
-        b_ub.append(seed[k])
-
-        row2 = np.zeros(2 * n)
-        row2[k] = -1
-        row2[n + k] = -1
-
-        A_ub.append(row2)
-        b_ub.append(-seed[k])
-
-    # Bounds
     bounds = []
 
     for i in range(n_co):
@@ -827,28 +813,72 @@ def calculate_final_allocation():
             else:
                 bounds.append((0, 0))
 
-    # Deviation variables
-    bounds += [(0, None)] * n
+    # --------------------------------------------------
+    # FIND A FEASIBLE STARTING SOLUTION
+    # --------------------------------------------------
 
-    result = linprog(
-        c=objective,
-        A_eq=np.array(A_eq),
-        b_eq=np.array(b_eq),
-        A_ub=np.array(A_ub),
-        b_ub=np.array(b_ub),
+    feasible = linprog(
+        c=np.zeros(n),
+        A_eq=A_eq,
+        b_eq=b_eq,
         bounds=bounds,
         method="highs"
+    )
+
+    if not feasible.success:
+
+        return None, (
+            "The selected CO combinations cannot satisfy both "
+            "assessment totals and CO target totals. "
+            "Please review your CO selections."
+        )
+
+    # --------------------------------------------------
+    # LEAST SQUARES OBJECTIVE
+    # --------------------------------------------------
+
+    def objective(x):
+
+        difference = x - seed
+
+        return 0.5 * np.sum(difference ** 2)
+
+    def gradient(x):
+
+        return x - seed
+
+    # --------------------------------------------------
+    # OPTIMISE WHILE PRESERVING BOTH TOTALS
+    # --------------------------------------------------
+
+    result = minimize(
+        objective,
+        feasible.x,
+        jac=gradient,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=[
+            {
+                "type": "eq",
+                "fun": lambda x: A_eq @ x - b_eq,
+                "jac": lambda x: A_eq
+            }
+        ],
+        options={
+            "maxiter": 2000,
+            "ftol": 1e-10,
+            "disp": False
+        }
     )
 
     if not result.success:
 
         return None, (
-            "The selected CO combinations cannot satisfy both "
-            "assessment-wise and CO-wise totals. "
-            "Please adjust the CO selections or CO weights."
+            "The allocation optimisation could not converge. "
+            "Please review the assessment CO weights and try again."
         )
 
-    allocation = result.x[:n].reshape(
+    allocation = result.x.reshape(
         n_co,
         n_assessments
     )
