@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
+from pathlib import Path
 
 from io import BytesIO
 from scipy.optimize import linprog, minimize
@@ -21,170 +22,192 @@ st.set_page_config(
 CONVERSION_TARGET = 20.0
 ASSESSMENT_NAMES = ["PA1", "PA2", "LE1", "LM"]
 
+from pathlib import Path
+import re
 
 # ==================================================
-# COURSE DETAILS
+# COMBINED COURSE DATABASE
 # ==================================================
 
-COURSE_DETAILS = {
+BASE_DIR = Path(__file__).resolve().parent
 
-    "Department of Botany": [
-        ("FUNDAMENTALS OF BOTANY", "BCM26DSCBO101", 5),
-        ("PLANTS AND HUMAN WELL-BEING", "BCM26DSCBO102", 0),
-        ("ECOTOURISM", "BCM26MDCBO101", 4)
-    ],
-
-    "Department of Chemistry": [
-        ("Fundamentals of Chemistry-1", "BCM26DSCCH101", 5),
-        ("Foundations of Food Biochemistry-1", "BCM26DSCCH102", 0),
-        ("Food Chemistry and Nutrition", "BCM26MDCCH101", 4)
-    ],
-
-    "Department of Commerce": [
-        ("Business Regulatory Framework", "BCM26DSCBL101", 5),
-        ("Financial Accounting", "BCM26DSCCO101", 5),
-        ("Basic Finance for Daily Life", "BCM26DSCCO102", 0),
-        ("Business Statistics", "BCM26DSCQT101", 5),
-        ("Event Management", "BCM26MDCCO101", 4),
-        ("Personal Finance and Planning", "BCM26MDCCO102", 0),
-        ("Business Mathematics", "BCM26MDCCO103", 0),
-        ("Fundamentals of Business Management", "BCM26MDCCO104", 4)
-    ],
-
-    "Department of Commerce(SF)": [
-        ("Fundamentals of Business Management", "BCM26MDCCO104", 4)
-    ],
-
-    "Department of Computer Science": [
-        ("Programming using C", "BCM26DSCCS101", 5),
-        ("Basics of Computer Science and AI", "BCM26DSCCS102", 0),
-        ("Introduction to IT", "BCM26MDCCS101", 4)
-    ],
-
-    "Department of Economics": [
-        ("Fundamentals of Economics I", "BCM26DSCEC101", 5),
-        ("Economics of Health", "BCM26DSCEC102", 0),
-        ("Economics and Finance in Everyday Life", "BCM26MDCEC101", 0)
-    ],
-
-    "Department of English": [
-        ("English for Commerce Part I", "BCM26AECEN101", 4),
-        ("English for Arts and Humanities Part I", "BCM26AECEN102", 4),
-        ("English for Science Part I", "BCM26AECEN103", 4),
-        ("AEC French Part I", "BCM26AECFR101", 4),
-        ("AEC German Part I", "BCM26AECGE101", 4),
-        ("Literary Genres:Poetry, Fiction and Folk Tales", "BCM26DSCEN101", 5),
-        ("Malayalam Literature in English Translation", "BCM26DSCEN102", 0),
-        ("Anglo-Saxon Aesthetics to Renaissance Rhetoric: Makers of English Literature", "BCM26DSCLH101", 5),
-        ("Narratives of Humour", "BCM26MDCEN101", 0),
-        ("Content Writing", "BCM26MDCEN102", 4)
-    ],
-
-    "Department of Food Science and Quality Control": [
-        ("Fundamentals of Nutrition & Food Chemistry", "BCM26DSCFQ101", 5),
-        ("Introduction to Food Science And Processing", "BCM26DSCFQ102", 0),
-        ("Food and Culture", "BCM26MDCFQ101", 4)
-    ],
-
-    "Department of Hindi": [
-        ("Theatre and Dialogue Presentation", "BCM26AECHN101", 0),
-        ("The Role and Representation of Women in Hindi Cinema", "BCM26AECHN102", 4),
-        ("Eminent Women Poets of Contemporary Hindi", "BCM26AECHN103", 4)
-    ],
-
-    "Department of History": [
-        ("Ancient Indian History: From Prehistoric Cultures to Early Empires", "BCM26DSCHI101", 5),
-        ("Modern Revolutions and Social Change", "BCM26DSCHI102", 0)
-    ],
-
-    "Department of Home Science": [
-        ("Essentials of Home Science and Research Methodology", "BCM26DSCHS101", 5),
-        ("Creative Arts and Crafts", "BCM26MDCHS101", 4)
-    ],
-
-    "Department of Malayalam": [
-        ("Bhasha Sahithi", "BCM26AECML101", 4),
-        ("Sarga Sahithi", "BCM26AECML102", 4),
-        ("Sahitheemalika", "BCM26AECML103", 4),
-        ("Gadhya Padangal: Kadha, Aathmakadha, Vimarsanam", "BCM26DSCML101", 5),
-        ("Kadhanuroopanam", "BCM26DSCML102", 0),
-        ("Keralathile Nadanpattukal", "BCM26MDCML101", 4)
-    ],
-
-    "Department of Mathematics": [
-        ("Basic Mathematical Structures and Calculus", "BCM26DSCMA101", 5),
-        ("Basic Concepts in Graph Theory", "BCM26DSCMA102", 0)
-    ],
-
-    "Department of Physical Education": [
-        ("First Aid, Safety and Emergency Response", "BCM26MDCPE101", 4)
-    ],
-
-    "Department of Physics": [
-        ("Introductory Physics", "BCM26DSCPH101", 5),
-        ("Physics of Renewable Energy Sources", "BCM26DSCPH102", 0),
-        ("Physics Around you", "BCM26MDCPH101", 0)
-    ],
-
-    "Department of Psychology": [
-        ("Psychology for Personal Growth", "BCM26DSCPS101", 5),
-        ("Introduction to Psychology", "BCM26DSCPY101", 0),
-        ("Communicate with confidence", "BCM26MDCPS101", 4)
-    ],
-
-    "Department of Sociology": [
-        ("Basics of Sociological Theory and Method", "BCM26DSCSO101", 5),
-        ("Basic Concepts in Sociology", "BCM26DSCSO102", 5),
-        ("Social Psychology: Exploring Self, Personality, Behaviour", "BCM26MDCSO101", 0)
-    ],
-
-    "Department of Statistics": [
-        ("Fundamentals of Statistics and Probability", "BCM26DSCST101", 5),
-        ("Statistical Data Analysis using Spreadsheets", "BCM26MDCST101", 4)
-    ],
-
-    "Department of Zoology": [
-        ("Fascinating World of Animals", "BCM26DSCZO101", 5),
-        ("Health, Nutrition and Human Well-Being", "BCM26DSCZO102", 0),
-        ("Reproductive Health and Sexual Well-being", "BCM26MDCZO101", 4)
-    ]
-}
+COURSE_FILE = BASE_DIR / "All_Courses_Consolidated.xlsx"
+COURSE_GROUP_FILE = BASE_DIR / "Course Group(1).xlsx"
 
 
-# ==================================================
-# PROGRAM TYPES
-# ==================================================
+# Check Excel files
+if not COURSE_FILE.exists():
+    st.error(f"File not found: {COURSE_FILE}")
+    st.stop()
 
-PROGRAM_TYPES = [
-    "AEC",
-    "AEC - OL",
-    "Minor - B",
-    "Major",
-    "Minor - C",
-    "Major Elective",
-    "MDC"
-]
+if not COURSE_GROUP_FILE.exists():
+    st.error(f"File not found: {COURSE_GROUP_FILE}")
+    st.stop()
 
 
-# ==================================================
-# SEMESTER CALCULATION
-# ==================================================
+@st.cache_data
+def load_all_courses():
 
-def semester_from_code(code):
+    # Load first Excel file
+    df1 = pd.read_excel(
+        COURSE_FILE,
+        sheet_name="All Courses"
+    )
 
-    digits = str(code)[-3:]
+    # Load second Excel file
+    df2 = pd.read_excel(
+        COURSE_GROUP_FILE,
+        sheet_name="Sheet1",
+        header=1
+    )
 
-    if not digits.isdigit():
+    # Standardise column names
+    df1.columns = df1.columns.str.strip()
+    df2.columns = df2.columns.str.strip()
+
+    # Prepare first file
+    df1 = df1.rename(columns={
+        "Program": "Course Name",
+        "Program Code": "Course Code",
+        "Program Type": "Program Type",
+        "Handling Department": "Department"
+    })
+
+    # Prepare second file
+    df2 = df2.rename(columns={
+        "Program": "Course Name",
+        "Program Code": "Course Code",
+        "Program Type": "Program Type",
+        "Handling Department": "Department"
+    })
+
+    # Extract semester from course code
+    def get_semester(code):
+
+        match = re.search(r"(\d{3})$", str(code))
+
+        if match:
+            number = int(match.group(1))
+
+            if 101 <= number <= 500:
+                return (number - 101) // 50 + 1
+
         return None
 
-    number = int(digits)
+    # Infer UG / PG from recognised course patterns
+    def get_level(code, program_type):
 
-    if number < 101 or number > 500:
+        code = str(code).upper()
+        program_type = str(program_type).upper()
+
+        if "PG" in code or "PG" in program_type:
+            return "PG"
+
+        if any(x in code for x in ["DSC", "AEC", "MDC"]):
+            return "UG"
+
         return None
 
-    return (number - 101) // 50 + 1
+    # Prepare semester in first file
+    df1["Semester Number"] = (
+        df1["Semester"]
+        .astype(str)
+        .str.extract(r"(\d+)")
+        .iloc[:, 0]
+    )
+
+    df1["Semester Number"] = pd.to_numeric(
+        df1["Semester Number"],
+        errors="coerce"
+    )
+
+    # Prepare second file
+    df2["Semester Number"] = df2["Course Code"].apply(
+        get_semester
+    )
+
+    df2["Level"] = df2.apply(
+        lambda row: get_level(
+            row["Course Code"],
+            row["Program Type"]
+        ),
+        axis=1
+    )
+
+    # First file already has its level
+    df1["Level"] = df1["Level"].astype(str).str.upper().str.strip()
+
+    # Combine both files
+    combined = pd.concat(
+        [df1, df2],
+        ignore_index=True,
+        sort=False
+    )
+
+    # Clean data
+    combined["Course Code"] = (
+        combined["Course Code"].astype(str).str.strip()
+    )
+
+    combined["Department"] = (
+        combined["Department"].astype(str).str.strip()
+    )
+
+    combined["Program Type"] = (
+        combined["Program Type"].astype(str).str.strip()
+    )
+
+    combined["Course Name"] = (
+        combined["Course Name"].astype(str).str.strip()
+    )
+
+    combined["Level"] = (
+        combined["Level"].astype(str).str.upper().str.strip()
+    )
+
+    # Remove invalid records
+    combined = combined[
+        combined["Course Code"].notna()
+        & combined["Course Name"].notna()
+        & combined["Department"].notna()
+        & combined["Course Code"].ne("nan")
+        & combined["Department"].ne("nan")
+    ].copy()
+
+    # Calculate academic year from semester
+    def get_year(row):
+
+        semester = row["Semester Number"]
+        level = row["Level"]
+
+        if pd.isna(semester):
+            return None
+
+        semester = int(semester)
+
+        if level == "UG" and 1 <= semester <= 6:
+            return (semester + 1) // 2
+
+        if level == "PG" and 1 <= semester <= 4:
+            return (semester + 1) // 2
+
+        return None
+
+    combined["Year"] = combined.apply(
+        get_year,
+        axis=1
+    )
+
+    # Remove duplicate course records
+    combined = combined.drop_duplicates(
+        subset=["Course Code", "Department"],
+        keep="first"
+    )
+
+    return combined.reset_index(drop=True)
 
 
+COURSE_DATA = load_all_courses()
 # ==================================================
 # CUSTOM CSS
 # ==================================================
@@ -342,7 +365,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-
 # ==================================================
 # COURSE DETAILS
 # ==================================================
@@ -352,71 +374,166 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# Programme Level
 col1, col2, col3 = st.columns(3)
 
 with col1:
 
-    departments = sorted(COURSE_DETAILS.keys())
+    levels = sorted(
+        COURSE_DATA["Level"]
+        .dropna()
+        .loc[lambda x: x.isin(["UG", "PG"])]
+        .unique()
+        .tolist()
+    )
+
+    programme_level = st.selectbox(
+        "Programme Level",
+        levels,
+        key="programme_level"
+    )
+
+
+# Filter by level
+level_data = COURSE_DATA[
+    COURSE_DATA["Level"] == programme_level
+].copy()
+
+
+# Year dropdown
+with col2:
+
+    years = sorted(
+        level_data["Year"].dropna().unique().tolist()
+    )
+
+    selected_year = st.selectbox(
+        "Year",
+        years,
+        format_func=lambda x: (
+            f"{int(x)} Year"
+        ),
+        key="selected_year"
+    )
+
+
+year_data = level_data[
+    level_data["Year"] == selected_year
+].copy()
+
+
+# Department dropdown
+with col3:
+
+    departments = sorted(
+        year_data["Department"].dropna().unique().tolist()
+    )
 
     department = st.selectbox(
         "Department",
-        departments
-    )
-
-with col2:
-
-    available_courses = COURSE_DETAILS[department]
-
-    course_names = [
-        item[0] for item in available_courses
-    ]
-
-    program = st.selectbox(
-        "Course Name",
-        course_names
-    )
-
-with col3:
-
-    program_type = st.selectbox(
-        "Program Type",
-        PROGRAM_TYPES
+        departments,
+        key="selected_department"
     )
 
 
-selected_course = next(
-    item for item in available_courses
-    if item[0] == program
-)
+department_data = year_data[
+    year_data["Department"] == department
+].copy()
 
-course_code = selected_course[1]
 
-semester = semester_from_code(course_code)
-
-semester_label = (
-    f"Semester {semester}"
-    if semester
-    else "Not available"
-)
-
+# Programme Type and Semester
 col4, col5 = st.columns(2)
 
 with col4:
 
-    st.text_input(
-        "Course Code",
-        value=course_code,
-        disabled=True
+    program_types = sorted(
+        department_data["Program Type"]
+        .dropna()
+        .unique()
+        .tolist()
     )
+
+    program_type = st.selectbox(
+        "Program Type",
+        program_types,
+        key="selected_program_type"
+    )
+
+
+type_data = department_data[
+    department_data["Program Type"] == program_type
+].copy()
+
 
 with col5:
 
-    st.text_input(
+    semesters = sorted(
+        type_data["Semester Number"]
+        .dropna()
+        .unique()
+        .astype(int)
+        .tolist()
+    )
+
+    semester = st.selectbox(
         "Semester",
-        value=semester_label,
+        semesters,
+        format_func=lambda x: f"Semester {x}",
+        key="selected_semester"
+    )
+
+
+# Filter by semester
+semester_data = type_data[
+    type_data["Semester Number"] == semester
+].copy()
+
+
+# Course Code dropdown
+course_options = semester_data.apply(
+    lambda row: (
+        f"{row['Course Code']} - {row['Course Name']}"
+    ),
+    axis=1
+).tolist()
+
+selected_course_option = st.selectbox(
+    "Course Code",
+    course_options,
+    key="selected_course_code"
+)
+
+
+# Get selected course
+selected_course = semester_data.iloc[
+    course_options.index(selected_course_option)
+]
+
+program = selected_course["Course Name"]
+
+course_code = selected_course["Course Code"]
+
+semester_label = f"Semester {semester}"
+
+
+# Display automatically selected details
+col6, col7 = st.columns(2)
+
+with col6:
+
+    st.text_input(
+        "Selected Course Code",
+        value=str(course_code),
         disabled=True
     )
 
+with col7:
+
+    st.text_input(
+        "Selected Semester",
+        value=semester_label,
+        disabled=True
+    )
 
 # ==================================================
 # COURSE OUTCOMES
