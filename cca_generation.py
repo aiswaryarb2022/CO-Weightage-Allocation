@@ -1706,105 +1706,106 @@ def create_final_weighted_output(
 
 
 # ==========================================================
-# 17. CREATE FINAL CCA PDF
+# 17. FINAL WEIGHTED CO MATRIX PDF
 # ==========================================================
 
 def create_weighted_cca_pdf(course_details, final_matrix):
 
-    course_name = course_details.get("course_name", "")
-    course_code = course_details.get("course_code", "")
-    course_type = course_details.get("course_type", "")
+    import io
+
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Table,
+        TableStyle,
+        Paragraph,
+        Spacer
+    )
 
     buffer = io.BytesIO()
-
-    
-
-    document = SimpleDocTemplate(
-        buffer,
-        pagesize=landscape(A4),
-        rightMargin=10 * mm,
-        leftMargin=10 * mm,
-        topMargin=12 * mm,
-        bottomMargin=12 * mm
-    )
-
-    styles = getSampleStyleSheet()
-
-    title_style = ParagraphStyle(
-        "CustomTitle",
-        parent=styles["Title"],
-        alignment=TA_CENTER,
-        textColor=colors.HexColor("#064E4A"),
-        fontSize=16,
-        leading=20
-    )
-
-    story = []
-
-    story.append(
-        Paragraph(
-            "FINAL COURSE OUTCOME ASSESSMENT",
-            title_style
-        )
-    )
-
-    story.append(Spacer(1, 8 * mm))
 
     # ------------------------------------------------------
     # COURSE DETAILS
     # ------------------------------------------------------
 
-    details_data = [
-        [
-            "COURSE NAME",
-            str(course_details.get("Course Name", ""))
-        ],
-        [
-            "COURSE CODE",
-            str(course_details.get("Course Code", ""))
-        ],
-        [
-            "COURSE TYPE",
-            str(course_details.get("Course Type", ""))
-        ]
-    ]
+    course_name = course_details.get("course_name", "")
+    course_code = course_details.get("course_code", "")
+    course_type = course_details.get("course_type", "")
 
-    details_table = Table(
-        details_data,
-        colWidths=[40 * mm, 100 * mm]
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        rightMargin=25,
+        leftMargin=25,
+        topMargin=25,
+        bottomMargin=25
     )
 
-    details_table.setStyle(
+    elements = []
+
+    styles = getSampleStyleSheet()
+
+    title_style = styles["Title"]
+
+    elements.append(
+        Paragraph(
+            "FINAL WEIGHTED CO MATRIX",
+            title_style
+        )
+    )
+
+    elements.append(Spacer(1, 15))
+
+    # ------------------------------------------------------
+    # COURSE INFORMATION
+    # ------------------------------------------------------
+
+    course_data = [
+        ["COURSE NAME", course_name],
+        ["COURSE CODE", course_code],
+        ["COURSE TYPE", course_type]
+    ]
+
+    course_table = Table(
+        course_data,
+        colWidths=[120, 350]
+    )
+
+    course_table.setStyle(
         TableStyle([
-
             ("BACKGROUND", (0, 0), (0, -1),
-             colors.HexColor("#CCFBF1")),
-
-            ("TEXTCOLOR", (0, 0), (-1, -1),
              colors.HexColor("#064E4A")),
 
-            ("FONTNAME", (0, 0), (0, -1),
+            ("TEXTCOLOR", (0, 0), (0, -1),
+             colors.white),
+
+            ("BACKGROUND", (1, 0), (1, -1),
+             colors.HexColor("#CCFBF1")),
+
+            ("TEXTCOLOR", (1, 0), (1, -1),
+             colors.HexColor("#064E4A")),
+
+            ("FONTNAME", (0, 0), (-1, -1),
              "Helvetica-Bold"),
 
             ("GRID", (0, 0), (-1, -1), 0.5,
-             colors.HexColor("#99F6E4")),
+             colors.grey),
 
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-
-            ("PADDING", (0, 0), (-1, -1), 6),
-
+            ("PADDING", (0, 0), (-1, -1), 7),
         ])
     )
 
-    story.append(details_table)
-
-    story.append(Spacer(1, 8 * mm))
+    elements.append(course_table)
+    elements.append(Spacer(1, 20))
 
     # ------------------------------------------------------
-    # FINAL WEIGHTED MATRIX
+    # FINAL MATRIX
+    # IMPORTANT: DO NOT GENERATE EXTRA TOTAL ROWS
     # ------------------------------------------------------
 
-    headers = [
+    columns = [
         "Student Name",
         "Admission Number",
         "Course Code",
@@ -1816,119 +1817,37 @@ def create_weighted_cca_pdf(course_details, final_matrix):
         "TOTAL"
     ]
 
-    table_data = [headers]
+    pdf_data = [columns]
 
-    span_commands = []
+    # Use the existing final matrix directly
+    for _, row in final_matrix.iterrows():
 
-    current_row = 1
-
-    for student_name, group in final_matrix.groupby(
-        "Student Name",
-        sort=False,
-        dropna=False
-    ):
-
-        group = group.reset_index(drop=True)
-
-        start_row = current_row
-
-        # Assessment rows
-        for _, row in group.iterrows():
-
-            values = [
-                str(row.get("Student Name", "")),
-                str(row.get("Admission Number", "")),
-                str(row.get("Course Code", "")),
-                str(row.get("Assessment", ""))
-            ]
-
-            for co in CO_LIST:
-
-                value = pd.to_numeric(
-                    row.get(co, 0),
-                    errors="coerce"
-                )
-
-                values.append(
-                    round(float(value), 2)
-                    if pd.notna(value)
-                    else 0
-                )
-
-            values.append(
-                round(float(row.get("TOTAL", 0)), 2)
-            )
-
-            table_data.append(values)
-
-            current_row += 1
-
-        # Merge student details across assessment rows
-        if current_row - start_row > 1:
-
-            span_commands.extend([
-
-                ("SPAN", (0, start_row), (0, current_row - 1)),
-
-                ("SPAN", (1, start_row), (1, current_row - 1)),
-
-                ("SPAN", (2, start_row), (2, current_row - 1))
-
-            ])
-
-        # --------------------------------------------------
-        # STUDENT TOTAL ROW
-        # --------------------------------------------------
-
-        total_values = [
-            "",
-            "",
-            "",
-            "TOTAL"
-        ]
-
-        for co in CO_LIST:
-
-            total_values.append(
-                round(
-                    group[co].sum(),
-                    2
-                )
-            )
-
-        total_values.append(
-            round(
-                group["TOTAL"].sum(),
-                2
-            )
-        )
-
-        table_data.append(total_values)
-
-        current_row += 1
+        pdf_data.append([
+            str(row.get("Student Name", "")),
+            str(row.get("Admission Number", "")),
+            str(row.get("Course Code", "")),
+            str(row.get("Assessment", "")),
+            f'{float(row.get("CO1", 0) or 0):.2f}',
+            f'{float(row.get("CO2", 0) or 0):.2f}',
+            f'{float(row.get("CO3", 0) or 0):.2f}',
+            f'{float(row.get("CO4", 0) or 0):.2f}',
+            f'{float(row.get("TOTAL", 0) or 0):.2f}'
+        ])
 
     # ------------------------------------------------------
-    # CREATE TABLE
+    # TABLE
     # ------------------------------------------------------
 
-    weighted_table = Table(
-        table_data,
+    matrix_table = Table(
+        pdf_data,
+        repeatRows=1,
         colWidths=[
-            34 * mm,
-            32 * mm,
-            31 * mm,
-            22 * mm,
-            17 * mm,
-            17 * mm,
-            17 * mm,
-            17 * mm,
-            20 * mm
-        ],
-        repeatRows=1
+            105, 85, 105, 65,
+            55, 55, 55, 55, 65
+        ]
     )
 
-    table_commands = [
-
+    table_style = [
         ("BACKGROUND", (0, 0), (-1, 0),
          colors.HexColor("#0F766E")),
 
@@ -1938,54 +1857,83 @@ def create_weighted_cca_pdf(course_details, final_matrix):
         ("FONTNAME", (0, 0), (-1, 0),
          "Helvetica-Bold"),
 
-        ("BACKGROUND", (0, 1), (-1, -1),
-         colors.HexColor("#F0FDFA")),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
 
-        ("TEXTCOLOR", (0, 1), (-1, -1),
-         colors.HexColor("#134E4A")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
 
         ("GRID", (0, 0), (-1, -1), 0.5,
          colors.HexColor("#99F6E4")),
 
-        ("ALIGN", (0, 0), (-1, -1),
-         "CENTER"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
 
-        ("VALIGN", (0, 0), (-1, -1),
-         "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
 
-        ("FONTNAME", (0, 1), (-1, -1),
-         "Helvetica"),
-
-        ("FONTSIZE", (0, 0), (-1, -1), 7),
-
-        ("PADDING", (0, 0), (-1, -1), 5),
-
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
     ]
 
-    table_commands.extend(span_commands)
+    # ------------------------------------------------------
+    # HIGHLIGHT TOTAL ROWS
+    # ------------------------------------------------------
 
-    # Make TOTAL rows bold
-    for i, row in enumerate(table_data):
+    for row_index in range(1, len(pdf_data)):
 
-        if i > 0 and row[3] == "TOTAL":
+        if pdf_data[row_index][3] == "TOTAL":
 
-            table_commands.extend([
+            table_style.append(
+                (
+                    "BACKGROUND",
+                    (0, row_index),
+                    (-1, row_index),
+                    colors.HexColor("#CCFBF1")
+                )
+            )
 
-                ("BACKGROUND", (3, i), (-1, i),
-                 colors.HexColor("#CCFBF1")),
+            table_style.append(
+                (
+                    "FONTNAME",
+                    (0, row_index),
+                    (-1, row_index),
+                    "Helvetica-Bold"
+                )
+            )
 
-                ("FONTNAME", (3, i), (-1, i),
-                 "Helvetica-Bold")
+    # ------------------------------------------------------
+    # MERGE STUDENT DETAILS ACROSS FOUR ASSESSMENT ROWS
+    # ------------------------------------------------------
 
-            ])
+    # Each student has five rows:
+    # PA1, PA2, LE1, LM, TOTAL
 
-    weighted_table.setStyle(
-        TableStyle(table_commands)
+    start_row = 1
+
+    while start_row + 4 < len(pdf_data):
+
+        # Merge only if this is a PA1 row
+        if pdf_data[start_row][3] == "PA1":
+
+            for column in range(3):
+
+                table_style.append(
+                    (
+                        "SPAN",
+                        (column, start_row),
+                        (column, start_row + 3)
+                    )
+                )
+
+        start_row += 5
+
+    matrix_table.setStyle(
+        TableStyle(table_style)
     )
 
-    story.append(weighted_table)
+    elements.append(matrix_table)
 
-    document.build(story)
+    # ------------------------------------------------------
+    # BUILD PDF
+    # ------------------------------------------------------
+
+    doc.build(elements)
 
     buffer.seek(0)
 
