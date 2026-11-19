@@ -1423,23 +1423,17 @@ def fetch_phase0_allocation(course_code):
 # 13. PROCESS PHASE 0 ALLOCATION
 # ==========================================================
 
-def process_phase0_allocation(allocation_df):
+def process_phase0_allocation(allocation):
 
-    df = allocation_df.copy()
+    if "Assessment" in allocation.columns:
+        allocation = allocation.rename(
+            columns={"Assessment": "Assessment Type"}
+        )
 
-    # ------------------------------------------------------
-    # IDENTIFY ASSESSMENT COLUMN
-    # ------------------------------------------------------
-
-   if "Assessment" in allocation.columns:
-    allocation = allocation.rename(
-        columns={"Assessment": "Assessment Type"}
-    )
-
-elif "Assessment Type" not in allocation.columns:
-    raise ValueError(
-        "Neither Assessment nor Assessment Type column was found."
-    )
+    elif "Assessment Type" not in allocation.columns:
+        raise ValueError(
+            "Neither Assessment nor Assessment Type column was found."
+        )
     # ------------------------------------------------------
     # IDENTIFY CO COLUMNS
     # ------------------------------------------------------
