@@ -3091,7 +3091,11 @@ if (
     # 34. FINAL WEIGHTED CO MATRIX
     # ONE TOTAL ROW PER STUDENT
     # ======================================================
+     st.write("DEBUG - Allocation weights:")
+st.write(allocation_weights)
 
+st.write("DEBUG - Allocation type:")
+st.write(type(allocation_weights))
     weighted_matrix = calculate_weighted_cca(
         edited_matrix,
         allocation_weights
