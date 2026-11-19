@@ -2067,29 +2067,30 @@ allocation_df, allocation_error = fetch_phase0_allocation(
 )
 
 if allocation_error:
-    st.error(f"PHASE 0 CONNECTION ERROR: {allocation_error}")
 
-elif allocation_df is None or allocation_df.empty:
-    st.error("Phase 0 returned no allocation data for this course.")
+    st.warning(
+        f"Unable to retrieve Phase 0 allocation: {allocation_error}"
+    )
 
 else:
-    st.write("### Phase 0 Data Received")
-    st.write("Available columns:")
-    st.write(allocation_df.columns.tolist())
-
-    st.write("Allocation records:")
-    st.dataframe(allocation_df)
 
     try:
-        allocation_weights = process_phase0_allocation(allocation_df)
 
-        st.success("Phase 0 allocation loaded successfully.")
+        allocation_weights = process_phase0_allocation(
+            allocation_df
+        )
 
-        st.write("### Processed Allocation Weights")
-        st.write(allocation_weights)
+        st.success(
+            "Phase 0 allocation loaded successfully."
+        )
 
     except Exception as exc:
-        st.error(f"PHASE 0 PROCESSING ERROR: {exc}")
+
+        allocation_weights = None
+
+        st.error(
+            f"Unable to process Phase 0 allocation: {exc}"
+        )
 # ==========================================================
 # 23. ND REPLACEMENT
 # ==========================================================
