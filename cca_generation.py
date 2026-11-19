@@ -1425,15 +1425,34 @@ def fetch_phase0_allocation(course_code):
 
 def process_phase0_allocation(allocation):
 
+    allocation = allocation.copy()
+
+    # ------------------------------------------------------
+    # STANDARDISE COLUMN NAMES
+    # ------------------------------------------------------
+
+    allocation.columns = (
+        allocation.columns.astype(str).str.strip()
+    )
+
+    # ------------------------------------------------------
+    # IDENTIFY ASSESSMENT COLUMN
+    # ------------------------------------------------------
+
     if "Assessment" in allocation.columns:
+
         allocation = allocation.rename(
             columns={"Assessment": "Assessment Type"}
         )
 
     elif "Assessment Type" not in allocation.columns:
+
         raise ValueError(
             "Neither Assessment nor Assessment Type column was found."
         )
+
+    assessment_column = "Assessment Type"
+
     # ------------------------------------------------------
     # IDENTIFY CO COLUMNS
     # ------------------------------------------------------
@@ -1443,7 +1462,7 @@ def process_phase0_allocation(allocation):
     for co in CO_LIST:
 
         found = find_column(
-            df,
+            allocation,
             [co]
         )
 
@@ -1471,7 +1490,7 @@ def process_phase0_allocation(allocation):
 
     weights = {}
 
-    for _, row in df.iterrows():
+    for _, row in allocation.iterrows():
 
         assessment_value = str(
             row[assessment_column]
@@ -1521,7 +1540,6 @@ def process_phase0_allocation(allocation):
         )
 
     return weights
-
 
 # ==========================================================
 # 14. DISPLAY PHASE 0 ALLOCATION
