@@ -2060,50 +2060,36 @@ st.divider()
 # 22. FETCH PHASE 0 ALLOCATION
 # ==========================================================
 
-st.subheader("03 | Phase 0 Allocation")
-
 allocation_weights = None
 
 allocation_df, allocation_error = fetch_phase0_allocation(
-    str(course_code).strip()
+    course_code
 )
 
 if allocation_error:
+    st.error(f"PHASE 0 CONNECTION ERROR: {allocation_error}")
 
-    st.warning(
-        "Phase 0 allocation could not be retrieved."
-    )
-
-    st.caption(allocation_error)
-
-    st.info(
-        "You can continue configuring Phase 2, but the "
-        "final weighted CO calculation and PDF download "
-        "will require a valid Phase 0 allocation."
-    )
+elif allocation_df is None or allocation_df.empty:
+    st.error("Phase 0 returned no allocation data for this course.")
 
 else:
+    st.write("### Phase 0 Data Received")
+    st.write("Available columns:")
+    st.write(allocation_df.columns.tolist())
+
+    st.write("Allocation records:")
+    st.dataframe(allocation_df)
 
     try:
+        allocation_weights = process_phase0_allocation(allocation_df)
 
-        allocation_weights = process_phase0_allocation(
-            allocation_df
-        )
+        st.success("Phase 0 allocation loaded successfully.")
 
-        st.success(
-            "Phase 0 allocation successfully retrieved."
-        )
+        st.write("### Processed Allocation Weights")
+        st.write(allocation_weights)
 
-       
     except Exception as exc:
-
-        st.error(
-            f"Unable to process Phase 0 allocation: {exc}"
-        )
-
-st.divider()
-
-
+        st.error(f"PHASE 0 PROCESSING ERROR: {exc}")
 # ==========================================================
 # 23. ND REPLACEMENT
 # ==========================================================
