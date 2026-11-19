@@ -3217,24 +3217,96 @@ if (
         ]
     )
 
-    # ------------------------------------------------------
-    # DISPLAY FINAL WEIGHTED MATRIX
-    # ------------------------------------------------------
+        # ======================================================
+    # COMBINED STUDENT ASSESSMENT DISPLAY MATRIX
+    # ======================================================
 
     st.divider()
 
-    st.markdown("### Final Weighted CO Matrix")
+    # Student details
+    display_matrix = edited_matrix.copy()
+
+    display_matrix.insert(
+        0, "Course Code", course_code
+    )
+
+    display_matrix.insert(
+        0, "Course Name", course_name
+    )
+
+    display_matrix.insert(
+        0, "Programme", course_type
+    )
+
+    # Component column
+    component_candidates = [
+        "Component (T/P)",
+        "Component",
+        "Component Type"
+    ]
+
+    component_column = next(
+        (
+            col for col in component_candidates
+            if col in course_data.columns
+        ),
+        None
+    )
+
+    if component_column:
+        display_matrix.insert(
+            0,
+            "Component (T/P)",
+            course_data[component_column].reindex(
+                display_matrix.index
+            ).values
+        )
+    else:
+        display_matrix.insert(
+            0,
+            "Component (T/P)",
+            ""
+        )
+
+    # Rename student details
+    display_matrix = display_matrix.rename(
+        columns={
+            "Student Name": "Name of Student"
+        }
+    )
+
+    # Final weighted CO values
+    final_totals = []
+
+    for _, student in weighted_matrix.iterrows():
+
+        final_totals.append({
+            "Final CO1": round(float(student.get("CO1", 0)), 2),
+            "Final CO2": round(float(student.get("CO2", 0)), 2),
+            "Final CO3": round(float(student.get("CO3", 0)), 2),
+            "Final CO4": round(float(student.get("CO4", 0)), 2)
+        })
+
+    final_totals_df = pd.DataFrame(final_totals)
+
+    display_matrix = display_matrix.reset_index(drop=True)
+
+    display_matrix = pd.concat(
+        [
+            display_matrix,
+            final_totals_df
+        ],
+        axis=1
+    )
+
+    # Display matrix
+    st.markdown("### Student Assessment and Final Assessment Matrix")
 
     st.dataframe(
-        final_weighted_output,
+        display_matrix,
         use_container_width=True,
         hide_index=True
     )
-
-    st.session_state["final_weighted_output"] = (
-        final_weighted_output.copy()
-    )
-
     # ------------------------------------------------------
     # GENERATE PDF
     # ------------------------------------------------------
