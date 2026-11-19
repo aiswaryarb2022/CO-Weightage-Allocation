@@ -33,63 +33,6 @@ st.caption("Phase 2 – Assessment Rescaling and CO Consolidation")
 # ============================================================
 
 st.markdown("""
-/* =====================================================
-   STRONG TEXT VISIBILITY IN ALL INPUT COMPONENTS
-   ===================================================== */
-
-/* Text, number and date input values */
-.stApp input,
-.stApp textarea {
-    color: #142D24 !important;
-    -webkit-text-fill-color: #142D24 !important;
-    font-weight: 600 !important;
-    opacity: 1 !important;
-}
-
-/* Streamlit data editor text */
-div[data-testid="stDataEditor"] {
-    color: #142D24 !important;
-    background-color: #FFFFFF !important;
-}
-
-/* Dropdown selected values */
-div[data-baseweb="select"] *,
-div[data-baseweb="select"] input {
-    color: #142D24 !important;
-    -webkit-text-fill-color: #142D24 !important;
-}
-
-/* Dropdown options */
-[role="listbox"] [role="option"] {
-    color: #142D24 !important;
-    background-color: #FFFFFF !important;
-}
-
-/* Input labels */
-[data-testid="stWidgetLabel"] p {
-    color: #183D32 !important;
-    font-weight: 700 !important;
-}
-
-/* Radio and checkbox text */
-[data-testid="stRadio"] label,
-[data-testid="stCheckbox"] label {
-    color: #183D32 !important;
-}
-
-/* Table headers */
-div[data-testid="stDataEditor"] [role="columnheader"] {
-    color: #FFFFFF !important;
-    background-color: #285C49 !important;
-}
-
-/* Improve input focus visibility */
-.stApp input:focus,
-.stApp textarea:focus {
-    border: 2px solid #285C49 !important;
-    box-shadow: 0 0 0 2px #C8B98A !important;
-}
-
 <style>
 
 /* Main background */
