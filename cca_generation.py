@@ -1620,7 +1620,7 @@ def create_allocation_display(weights):
 
 
 # ==========================================================
-# 15. DIRECT PHASE 0 × PHASE 2 MULTIPLICATION
+# 15. PHASE 0 × PHASE 2 WEIGHTED CO CALCULATION
 # ==========================================================
 
 def calculate_weighted_cca(
@@ -1645,7 +1645,6 @@ def calculate_weighted_cca(
             )
 
             if source_column not in result.columns:
-
                 result[source_column] = np.nan
 
             phase2_marks = pd.to_numeric(
@@ -1653,39 +1652,49 @@ def calculate_weighted_cca(
                 errors="coerce"
             )
 
-            phase0_weight = allocation_weights[
-                assessment
-            ][co]
+            phase0_weight = float(
+                allocation_weights[assessment][co]
+            )
 
-            # DIRECT MULTIPLICATION
+            # Weighted contribution
             result[contribution_column] = (
                 phase2_marks * phase0_weight
             )
 
     # ------------------------------------------------------
-    # FINAL CO SCORES
+    # CALCULATE FINAL CO SCORES OUT OF 100
     # ------------------------------------------------------
 
     for co in CO_LIST:
 
         contribution_columns = [
-
             f"{assessment}_{co}_Weighted"
-
             for assessment in ASSESSMENT_ORDER
-
         ]
 
-        result[co] = result[
-            contribution_columns
-        ].sum(
-            axis=1,
-            min_count=1
+        # Total Phase 0 allocation for this CO
+        total_weight = sum(
+            float(allocation_weights[assessment][co])
+            for assessment in ASSESSMENT_ORDER
         )
 
+        if total_weight > 0:
+
+            # Sum of weighted contributions
+            total_contribution = result[
+                contribution_columns
+            ].fillna(0).sum(axis=1)
+
+            # Weighted average
+            result[co] = (
+                total_contribution / total_weight
+            )
+
+        else:
+
+            result[co] = 0.0
+
     return result
-
-
 # ==========================================================
 # 16. CREATE FINAL WEIGHTED OUTPUT
 # ==========================================================
