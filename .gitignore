@@ -1,4 +1,10 @@
 .streamlit/secrets.toml
+.env
+*.env
+credentials.json
+token.json
+*.pem
+*.key
 __pycache__/
 *.pyc
 .venv/
