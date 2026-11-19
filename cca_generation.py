@@ -1431,21 +1431,15 @@ def process_phase0_allocation(allocation_df):
     # IDENTIFY ASSESSMENT COLUMN
     # ------------------------------------------------------
 
-    assessment_column = find_column(
-        df,
-        [
-            "Assessment Type",
-            "Assessment",
-            "Assessment Name"
-        ]
+   if "Assessment" in allocation.columns:
+    allocation = allocation.rename(
+        columns={"Assessment": "Assessment Type"}
     )
 
-    if assessment_column is None:
-
-        raise ValueError(
-            "Assessment Type column was not found."
-        )
-
+elif "Assessment Type" not in allocation.columns:
+    raise ValueError(
+        "Neither Assessment nor Assessment Type column was found."
+    )
     # ------------------------------------------------------
     # IDENTIFY CO COLUMNS
     # ------------------------------------------------------
