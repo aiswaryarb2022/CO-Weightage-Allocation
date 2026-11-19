@@ -35,10 +35,10 @@ st.caption("Phase 2 – Assessment Rescaling and CO Consolidation")
 st.markdown("""
 <style>
 
-/* Main application background */
+/* Main background */
 .stApp {
     background-color: #F3F6F1;
-    color: #263C32;
+    color: #183D32;
 }
 
 /* Main content */
@@ -53,32 +53,50 @@ h1, h2, h3, h4 {
     font-weight: 700 !important;
 }
 
-/* Normal text */
-p, label {
+/* Normal text and labels */
+p, label, span {
     color: #263C32;
 }
 
-/* Input fields */
+/* Text input boxes */
+div[data-testid="stTextInput"] input,
+div[data-testid="stNumberInput"] input,
+div[data-testid="stDateInput"] input,
+div[data-testid="stTextArea"] textarea,
 div[data-baseweb="input"] input,
 div[data-baseweb="textarea"] textarea {
+
     background-color: #FFFFFF !important;
     color: #183D32 !important;
-    border: 1px solid #A6B9AA !important;
+    -webkit-text-fill-color: #183D32 !important;
+    border: 1.5px solid #789887 !important;
+    border-radius: 7px !important;
+    font-weight: 600 !important;
 }
 
-/* Dropdown fields */
+/* Placeholder text */
+input::placeholder,
+textarea::placeholder {
+    color: #718477 !important;
+    -webkit-text-fill-color: #718477 !important;
+    opacity: 1 !important;
+}
+
+/* Dropdown boxes */
 div[data-baseweb="select"] > div {
     background-color: #FFFFFF !important;
     color: #183D32 !important;
-    border: 1px solid #A6B9AA !important;
+    border: 1.5px solid #789887 !important;
+    border-radius: 7px !important;
 }
 
-/* Dropdown selected text */
+/* Selected dropdown text */
 div[data-baseweb="select"] span {
     color: #183D32 !important;
 }
 
-/* Dropdown options */
+/* Dropdown menu */
+div[data-baseweb="popover"],
 div[data-baseweb="popover"] ul {
     background-color: #FFFFFF !important;
 }
@@ -87,12 +105,12 @@ div[data-baseweb="popover"] li {
     color: #183D32 !important;
 }
 
-/* Data editor and dataframe */
+/* Data tables */
 div[data-testid="stDataFrame"],
 div[data-testid="stDataEditor"] {
     background-color: #FFFFFF !important;
-    border: 1px solid #B7C9BB !important;
-    border-radius: 10px;
+    border: 1px solid #A6B9AA !important;
+    border-radius: 10px !important;
 }
 
 /* Buttons */
@@ -101,8 +119,8 @@ div[data-testid="stDataEditor"] {
     background-color: #183D32 !important;
     color: #FFFFFF !important;
     border: 1px solid #183D32 !important;
-    border-radius: 8px;
-    font-weight: 600;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
 }
 
 /* Button hover */
@@ -110,7 +128,6 @@ div[data-testid="stDataEditor"] {
 .stDownloadButton button:hover {
     background-color: #285C49 !important;
     color: #FFFFFF !important;
-    border: 1px solid #C8B98A !important;
 }
 
 /* Radio buttons */
@@ -120,16 +137,16 @@ div[data-testid="stRadio"] label {
 
 /* File uploader */
 div[data-testid="stFileUploader"] {
-    background-color: #FFFFFF;
-    border: 1px solid #B7C9BB;
-    border-radius: 10px;
+    background-color: #FFFFFF !important;
+    border: 1px solid #789887 !important;
+    border-radius: 10px !important;
     padding: 12px;
 }
 
 /* Metric cards */
 div[data-testid="stMetric"] {
-    background-color: #FFFFFF;
-    border: 1px solid #B7C9BB;
+    background-color: #FFFFFF !important;
+    border: 1px solid #A6B9AA !important;
     padding: 15px;
     border-radius: 10px;
 }
@@ -139,24 +156,23 @@ div[data-testid="stMetricValue"] {
     color: #183D32 !important;
 }
 
-/* Information messages */
-div[data-testid="stAlert"] {
-    border-radius: 8px;
-}
-
 /* Captions */
 .stCaption {
     color: #526B5D !important;
 }
 
+/* Alerts */
+div[data-testid="stAlert"] {
+    border-radius: 8px;
+}
+
 /* Divider */
 hr {
-    border-color: #B7C9BB !important;
+    border-color: #A6B9AA !important;
 }
 
 </style>
 """, unsafe_allow_html=True)
-
 
 # ============================================================
 # 3. CONSTANTS
