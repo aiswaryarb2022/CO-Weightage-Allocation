@@ -1362,6 +1362,10 @@ def fetch_phase0_allocation(course_code):
 
     try:
 
+        # --------------------------------------------------
+        # GOOGLE SHEETS CONNECTION
+        # --------------------------------------------------
+
         script_url = st.secrets["GOOGLE_SCRIPT_URL"]
 
         secret_token = st.secrets["GOOGLE_SECRET_TOKEN"]
@@ -1379,6 +1383,10 @@ def fetch_phase0_allocation(course_code):
 
         data = response.json()
 
+        # --------------------------------------------------
+        # CHECK RESPONSE
+        # --------------------------------------------------
+
         if data.get("status") == "error":
 
             return None, data.get(
@@ -1386,25 +1394,42 @@ def fetch_phase0_allocation(course_code):
                 "Allocation retrieval failed."
             )
 
-        allocation_data = data.get(
-            "data",
-            data.get("allocation", data.get("rows"))
-        )
+        # --------------------------------------------------
+        # READ HEADERS AND ROWS
+        # --------------------------------------------------
 
-        if allocation_data is None:
+        headers = data.get("headers")
+
+        rows = data.get("rows")
+
+        if not headers:
 
             return None, (
-                "No allocation data was returned by Google Sheets."
+                "Google Sheets did not return column headers."
             )
 
-        if isinstance(allocation_data, dict):
+        if not rows:
 
-            allocation_data = allocation_data.get(
-                "rows",
-                allocation_data.get("data", [])
+            return None, (
+                "Google Sheets did not return allocation rows."
             )
 
-        allocation_df = pd.DataFrame(allocation_data)
+        # --------------------------------------------------
+        # CREATE DATAFRAME USING CORRECT HEADERS
+        # --------------------------------------------------
+
+        allocation_df = pd.DataFrame(
+            rows,
+            columns=headers
+        )
+
+        # --------------------------------------------------
+        # CLEAN COLUMN NAMES
+        # --------------------------------------------------
+
+        allocation_df.columns = (
+            allocation_df.columns.astype(str).str.strip()
+        )
 
         if allocation_df.empty:
 
@@ -1417,8 +1442,6 @@ def fetch_phase0_allocation(course_code):
     except Exception as e:
 
         return None, str(e)
-
-
 # ==========================================================
 # 13. PROCESS PHASE 0 ALLOCATION
 # ==========================================================
