@@ -1619,6 +1619,7 @@ def create_allocation_display(weights):
     return pd.DataFrame(rows)
 
 
+
 # ==========================================================
 # 15. PHASE 0 × PHASE 2 WEIGHTED CO CALCULATION
 # ==========================================================
@@ -1631,7 +1632,8 @@ def calculate_weighted_cca(
     result = assessment_matrix.copy()
 
     # ------------------------------------------------------
-    # CALCULATE EACH ASSESSMENT-CO CONTRIBUTION
+    # CALCULATE EACH ASSESSMENT CONTRIBUTION
+    # Formula: Rescaled Mark × Phase 0 Weight / 100
     # ------------------------------------------------------
 
     for assessment in ASSESSMENT_ORDER:
@@ -1656,13 +1658,12 @@ def calculate_weighted_cca(
                 allocation_weights[assessment][co]
             )
 
-            # Weighted contribution
             result[contribution_column] = (
-                phase2_marks * phase0_weight
+                phase2_marks * phase0_weight / 100
             )
 
     # ------------------------------------------------------
-    # CALCULATE FINAL CO SCORES OUT OF 100
+    # FINAL CO TOTALS
     # ------------------------------------------------------
 
     for co in CO_LIST:
@@ -1672,27 +1673,9 @@ def calculate_weighted_cca(
             for assessment in ASSESSMENT_ORDER
         ]
 
-        # Total Phase 0 allocation for this CO
-        total_weight = sum(
-            float(allocation_weights[assessment][co])
-            for assessment in ASSESSMENT_ORDER
-        )
-
-        if total_weight > 0:
-
-            # Sum of weighted contributions
-            total_contribution = result[
-                contribution_columns
-            ].fillna(0).sum(axis=1)
-
-            # Weighted average
-            result[co] = (
-                total_contribution / total_weight
-            )
-
-        else:
-
-            result[co] = 0.0
+        result[co] = result[
+            contribution_columns
+        ].fillna(0).sum(axis=1)
 
     return result
 # ==========================================================
@@ -1728,9 +1711,7 @@ def create_final_weighted_output(
 
 def create_weighted_cca_pdf(
     course_details,
-    allocation_weights,
-    assessment_matrix,
-    weighted_matrix
+    final_matrix
 ):
 
     buffer = BytesIO()
@@ -1738,8 +1719,8 @@ def create_weighted_cca_pdf(
     document = SimpleDocTemplate(
         buffer,
         pagesize=landscape(A4),
-        rightMargin=12 * mm,
-        leftMargin=12 * mm,
+        rightMargin=10 * mm,
+        leftMargin=10 * mm,
         topMargin=12 * mm,
         bottomMargin=12 * mm
     )
@@ -1750,31 +1731,12 @@ def create_weighted_cca_pdf(
         "CustomTitle",
         parent=styles["Title"],
         alignment=TA_CENTER,
-        textColor=colors.HexColor("#185C37"),
-        fontSize=17,
-        leading=22
-    )
-
-    heading_style = ParagraphStyle(
-        "CustomHeading",
-        parent=styles["Heading2"],
-        textColor=colors.HexColor("#185C37"),
-        fontSize=11,
-        leading=14
-    )
-
-    small_style = ParagraphStyle(
-        "SmallText",
-        parent=styles["Normal"],
-        fontSize=7,
-        leading=9
+        textColor=colors.HexColor("#064E4A"),
+        fontSize=16,
+        leading=20
     )
 
     story = []
-
-    # ------------------------------------------------------
-    # TITLE
-    # ------------------------------------------------------
 
     story.append(
         Paragraph(
@@ -1789,255 +1751,242 @@ def create_weighted_cca_pdf(
     # COURSE DETAILS
     # ------------------------------------------------------
 
-    story.append(
-        Paragraph(
-            "Course Details",
-            heading_style
-        )
-    )
-
     details_data = [
-        ["Course Name", str(
-            course_details.get("Course Name", "")
-        )],
-
-        ["Course Code", str(
-            course_details.get("Course Code", "")
-        )],
-
-        ["Course Type", str(
-            course_details.get("Course Type", "")
-        )]
+        [
+            "COURSE NAME",
+            str(course_details.get("Course Name", ""))
+        ],
+        [
+            "COURSE CODE",
+            str(course_details.get("Course Code", ""))
+        ],
+        [
+            "COURSE TYPE",
+            str(course_details.get("Course Type", ""))
+        ]
     ]
 
     details_table = Table(
         details_data,
-        colWidths=[40 * mm, 180 * mm]
+        colWidths=[40 * mm, 100 * mm]
     )
 
     details_table.setStyle(
         TableStyle([
 
             ("BACKGROUND", (0, 0), (0, -1),
-             colors.HexColor("#E3F0E6")),
+             colors.HexColor("#CCFBF1")),
 
             ("TEXTCOLOR", (0, 0), (-1, -1),
-             colors.HexColor("#183D32")),
+             colors.HexColor("#064E4A")),
+
+            ("FONTNAME", (0, 0), (0, -1),
+             "Helvetica-Bold"),
 
             ("GRID", (0, 0), (-1, -1), 0.5,
-             colors.HexColor("#B7CDBB")),
-
-            ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+             colors.HexColor("#99F6E4")),
 
             ("FONTSIZE", (0, 0), (-1, -1), 8),
 
-            ("PADDING", (0, 0), (-1, -1), 5)
+            ("PADDING", (0, 0), (-1, -1), 6),
 
         ])
     )
 
     story.append(details_table)
 
-    story.append(Spacer(1, 7 * mm))
+    story.append(Spacer(1, 8 * mm))
 
     # ------------------------------------------------------
-    # PHASE 0 ALLOCATION TABLE
+    # FINAL WEIGHTED MATRIX
     # ------------------------------------------------------
 
-    story.append(
-        Paragraph(
-            "Phase 0 – Allocation Matrix",
-            heading_style
-        )
-    )
-
-    allocation_df = create_allocation_display(
-        allocation_weights
-    )
-
-    allocation_data = [
-        list(allocation_df.columns)
+    headers = [
+        "Student Name",
+        "Admission Number",
+        "Course Code",
+        "Assessment",
+        "CO1",
+        "CO2",
+        "CO3",
+        "CO4",
+        "TOTAL"
     ]
 
-    for _, row in allocation_df.iterrows():
+    table_data = [headers]
 
-        allocation_data.append(
-            [str(value) for value in row.tolist()]
-        )
+    span_commands = []
 
-    allocation_table = Table(
-        allocation_data,
-        repeatRows=1
-    )
+    current_row = 1
 
-    allocation_table.setStyle(
-        TableStyle([
+    for student_name, group in final_matrix.groupby(
+        "Student Name",
+        sort=False,
+        dropna=False
+    ):
 
-            ("BACKGROUND", (0, 0), (-1, 0),
-             colors.HexColor("#185C37")),
+        group = group.reset_index(drop=True)
 
-            ("TEXTCOLOR", (0, 0), (-1, 0),
-             colors.white),
+        start_row = current_row
 
-            ("BACKGROUND", (0, 1), (-1, -1),
-             colors.HexColor("#F1F7F2")),
+        # Assessment rows
+        for _, row in group.iterrows():
 
-            ("GRID", (0, 0), (-1, -1), 0.5,
-             colors.HexColor("#B7CDBB")),
+            values = [
+                str(row.get("Student Name", "")),
+                str(row.get("Admission Number", "")),
+                str(row.get("Course Code", "")),
+                str(row.get("Assessment", ""))
+            ]
 
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            for co in CO_LIST:
 
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                value = pd.to_numeric(
+                    row.get(co, 0),
+                    errors="coerce"
+                )
 
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
+                values.append(
+                    round(float(value), 2)
+                    if pd.notna(value)
+                    else 0
+                )
 
-            ("PADDING", (0, 0), (-1, -1), 5)
+            values.append(
+                round(float(row.get("TOTAL", 0)), 2)
+            )
 
-        ])
-    )
+            table_data.append(values)
 
-    story.append(allocation_table)
+            current_row += 1
 
-    story.append(Spacer(1, 7 * mm))
+        # Merge student details across assessment rows
+        if current_row - start_row > 1:
 
-    # ------------------------------------------------------
-    # PHASE 2 ASSESSMENT MARKS
-    # ------------------------------------------------------
+            span_commands.extend([
 
-    story.append(
-        Paragraph(
-            "Phase 2 – Assessment Marks",
-            heading_style
-        )
-    )
+                ("SPAN", (0, start_row), (0, current_row - 1)),
 
-    assessment_columns = [
-        col for col in assessment_matrix.columns
-        if col in [
-            "Student Name",
-            "Reg No",
-            "Admission No",
-            "Course Code",
-            "Course Name",
-            "Course Type"
+                ("SPAN", (1, start_row), (1, current_row - 1)),
+
+                ("SPAN", (2, start_row), (2, current_row - 1))
+
+            ])
+
+        # --------------------------------------------------
+        # STUDENT TOTAL ROW
+        # --------------------------------------------------
+
+        total_values = [
+            "",
+            "",
+            "",
+            "TOTAL"
         ]
-        or col.endswith(
-            tuple(
-                f"_{co}" for co in CO_LIST
+
+        for co in CO_LIST:
+
+            total_values.append(
+                round(
+                    group[co].sum(),
+                    2
+                )
+            )
+
+        total_values.append(
+            round(
+                group["TOTAL"].sum(),
+                2
             )
         )
-    ]
 
-    assessment_pdf = assessment_matrix[
-        assessment_columns
-    ].copy()
+        table_data.append(total_values)
 
-    assessment_pdf = assessment_pdf.fillna("")
+        current_row += 1
 
-    assessment_data = [
-        list(assessment_pdf.columns)
-    ]
+    # ------------------------------------------------------
+    # CREATE TABLE
+    # ------------------------------------------------------
 
-    for _, row in assessment_pdf.iterrows():
-
-        assessment_data.append([
-            str(value)[:30]
-            for value in row.tolist()
-        ])
-
-    assessment_table = Table(
-        assessment_data,
+    weighted_table = Table(
+        table_data,
+        colWidths=[
+            34 * mm,
+            32 * mm,
+            31 * mm,
+            22 * mm,
+            17 * mm,
+            17 * mm,
+            17 * mm,
+            17 * mm,
+            20 * mm
+        ],
         repeatRows=1
     )
 
-    assessment_table.setStyle(
-        TableStyle([
+    table_commands = [
 
-            ("BACKGROUND", (0, 0), (-1, 0),
-             colors.HexColor("#185C37")),
+        ("BACKGROUND", (0, 0), (-1, 0),
+         colors.HexColor("#0F766E")),
 
-            ("TEXTCOLOR", (0, 0), (-1, 0),
-             colors.white),
+        ("TEXTCOLOR", (0, 0), (-1, 0),
+         colors.white),
 
-            ("GRID", (0, 0), (-1, -1), 0.35,
-             colors.HexColor("#B7CDBB")),
+        ("FONTNAME", (0, 0), (-1, 0),
+         "Helvetica-Bold"),
 
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("BACKGROUND", (0, 1), (-1, -1),
+         colors.HexColor("#F0FDFA")),
 
-            ("FONTSIZE", (0, 0), (-1, -1), 6),
+        ("TEXTCOLOR", (0, 1), (-1, -1),
+         colors.HexColor("#134E4A")),
 
-            ("PADDING", (0, 0), (-1, -1), 3)
+        ("GRID", (0, 0), (-1, -1), 0.5,
+         colors.HexColor("#99F6E4")),
 
-        ])
-    )
+        ("ALIGN", (0, 0), (-1, -1),
+         "CENTER"),
 
-    story.append(assessment_table)
+        ("VALIGN", (0, 0), (-1, -1),
+         "MIDDLE"),
 
-    story.append(Spacer(1, 7 * mm))
+        ("FONTNAME", (0, 1), (-1, -1),
+         "Helvetica"),
 
-    # ------------------------------------------------------
-    # FINAL WEIGHTED CO MATRIX
-    # ------------------------------------------------------
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
 
-    story.append(
-        Paragraph(
-            "Final Weighted CO Matrix",
-            heading_style
-        )
-    )
+        ("PADDING", (0, 0), (-1, -1), 5),
 
-    final_pdf = weighted_matrix.fillna("")
-
-    final_data = [
-        list(final_pdf.columns)
     ]
 
-    for _, row in final_pdf.iterrows():
+    table_commands.extend(span_commands)
 
-        final_data.append([
-            str(value)[:35]
-            for value in row.tolist()
-        ])
+    # Make TOTAL rows bold
+    for i, row in enumerate(table_data):
 
-    final_table = Table(
-        final_data,
-        repeatRows=1
+        if i > 0 and row[3] == "TOTAL":
+
+            table_commands.extend([
+
+                ("BACKGROUND", (3, i), (-1, i),
+                 colors.HexColor("#CCFBF1")),
+
+                ("FONTNAME", (3, i), (-1, i),
+                 "Helvetica-Bold")
+
+            ])
+
+    weighted_table.setStyle(
+        TableStyle(table_commands)
     )
 
-    final_table.setStyle(
-        TableStyle([
-
-            ("BACKGROUND", (0, 0), (-1, 0),
-             colors.HexColor("#185C37")),
-
-            ("TEXTCOLOR", (0, 0), (-1, 0),
-             colors.white),
-
-            ("BACKGROUND", (0, 1), (-1, -1),
-             colors.HexColor("#EAF4EC")),
-
-            ("GRID", (0, 0), (-1, -1), 0.5,
-             colors.HexColor("#B7CDBB")),
-
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-
-            ("FONTSIZE", (0, 0), (-1, -1), 7),
-
-            ("PADDING", (0, 0), (-1, -1), 4)
-
-        ])
-    )
-
-    story.append(final_table)
+    story.append(weighted_table)
 
     document.build(story)
 
     buffer.seek(0)
 
     return buffer.getvalue()
-
 # ==========================================================
 # 18. DASHBOARD
 # ==========================================================
@@ -2194,14 +2143,7 @@ else:
             "Phase 0 allocation successfully retrieved."
         )
 
-        st.markdown("### Retrieved Allocation Matrix")
-
-        st.dataframe(
-            create_allocation_display(allocation_weights),
-            use_container_width=True,
-            hide_index=True
-        )
-
+       
     except Exception as exc:
 
         st.error(
@@ -3084,7 +3026,7 @@ if (
         ),
         use_container_width=True
     )
-   # ==========================================================
+# ==========================================================
 # 34. FINAL PHASE 0 × PHASE 2 CALCULATION
 # ==========================================================
 
@@ -3096,14 +3038,17 @@ if allocation_weights is not None:
 
     try:
 
-        # Use the edited assessment matrix
+        # --------------------------------------------------
+        # CALCULATE WEIGHTED VALUES
+        # --------------------------------------------------
+
         weighted_matrix = calculate_weighted_cca(
             edited_matrix,
             allocation_weights
         )
 
         # --------------------------------------------------
-        # ADD STUDENT DETAILS TO FINAL OUTPUT
+        # STUDENT AND COURSE DETAILS
         # --------------------------------------------------
 
         final_identity_columns = [
@@ -3114,32 +3059,123 @@ if allocation_weights is not None:
             if col in weighted_matrix.columns
         ]
 
-        final_course_columns = [
-            "Course Name",
-            "Course Code",
-            "Course Type"
-        ]
-
-        # Add course details automatically
-        weighted_matrix["Course Name"] = course_name
         weighted_matrix["Course Code"] = course_code
-        weighted_matrix["Course Type"] = course_type
-
-        final_columns = (
-            final_identity_columns
-            + final_course_columns
-            + ["CO1", "CO2", "CO3", "CO4"]
-        )
-
-        final_weighted_output = weighted_matrix[
-            [
-                col for col in final_columns
-                if col in weighted_matrix.columns
-            ]
-        ].copy()
 
         # --------------------------------------------------
-        # DISPLAY FINAL MATRIX
+        # CREATE ASSESSMENT-WISE DISPLAY
+        # --------------------------------------------------
+
+        final_rows = []
+
+        for index, student in weighted_matrix.iterrows():
+
+            for assessment in ASSESSMENT_ORDER:
+
+                row = {
+
+                    "Student Name": (
+                        student["Student Name"]
+                        if assessment == "PA1"
+                        else ""
+                    ),
+
+                    "Admission Number": (
+                        student["Admission Number"]
+                        if assessment == "PA1"
+                        else ""
+                    ),
+
+                    "Course Code": (
+                        course_code
+                        if assessment == "PA1"
+                        else ""
+                    ),
+
+                    "Assessment": assessment
+
+                }
+
+                for co in CO_LIST:
+
+                    column = f"{assessment}_{co}_Weighted"
+
+                    value = pd.to_numeric(
+                        student.get(column, 0),
+                        errors="coerce"
+                    )
+
+                    row[co] = (
+                        round(float(value), 2)
+                        if pd.notna(value)
+                        else 0.0
+                    )
+
+                row["TOTAL"] = round(
+                    sum(row[co] for co in CO_LIST),
+                    2
+                )
+
+                final_rows.append(row)
+
+            # --------------------------------------------------
+            # STUDENT TOTAL ROW
+            # --------------------------------------------------
+
+            total_row = {
+
+                "Student Name": "",
+                "Admission Number": "",
+                "Course Code": "",
+                "Assessment": "TOTAL"
+
+            }
+
+            for co in CO_LIST:
+
+                total_row[co] = round(
+                    sum(
+                        float(
+                            weighted_matrix.loc[
+                                index,
+                                f"{assessment}_{co}_Weighted"
+                            ]
+                            if pd.notna(
+                                weighted_matrix.loc[
+                                    index,
+                                    f"{assessment}_{co}_Weighted"
+                                ]
+                            )
+                            else 0
+                        )
+                        for assessment in ASSESSMENT_ORDER
+                    ),
+                    2
+                )
+
+            total_row["TOTAL"] = round(
+                sum(total_row[co] for co in CO_LIST),
+                2
+            )
+
+            final_rows.append(total_row)
+
+        final_weighted_output = pd.DataFrame(
+            final_rows,
+            columns=[
+                "Student Name",
+                "Admission Number",
+                "Course Code",
+                "Assessment",
+                "CO1",
+                "CO2",
+                "CO3",
+                "CO4",
+                "TOTAL"
+            ]
+        )
+
+        # --------------------------------------------------
+        # DISPLAY MATRIX
         # --------------------------------------------------
 
         st.success(
@@ -3161,15 +3197,17 @@ if allocation_weights is not None:
         # --------------------------------------------------
 
         course_details = {
+
             "Course Name": course_name,
+
             "Course Code": course_code,
+
             "Course Type": course_type
+
         }
 
         pdf_file = create_weighted_cca_pdf(
             course_details,
-            allocation_weights,
-            edited_matrix,
             final_weighted_output
         )
 
