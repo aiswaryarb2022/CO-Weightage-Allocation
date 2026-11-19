@@ -1428,16 +1428,50 @@ def process_phase0_allocation(allocation):
     allocation = allocation.copy()
 
     # ------------------------------------------------------
-    # STANDARDISE COLUMN NAMES
+    # DETECT ACTUAL HEADER ROW
     # ------------------------------------------------------
 
     allocation.columns = (
         allocation.columns.astype(str).str.strip()
     )
 
+    if "Assessment" not in allocation.columns and \
+       "Assessment Type" not in allocation.columns:
+
+        header_index = None
+
+        for i in range(len(allocation)):
+
+            row_values = [
+                str(value).strip().lower()
+                for value in allocation.iloc[i].values
+            ]
+
+            if "assessment" in row_values or \
+               "assessment type" in row_values:
+
+                header_index = i
+                break
+
+        if header_index is None:
+
+            raise ValueError(
+                "Could not find the Assessment header row "
+                "in the Google Sheets data."
+            )
+
+        allocation.columns = allocation.iloc[header_index]
+
+        allocation = allocation.iloc[header_index + 1:].copy()
+
     # ------------------------------------------------------
-    # IDENTIFY ASSESSMENT COLUMN
+    # CLEAN COLUMN NAMES
     # ------------------------------------------------------
+
+    allocation.columns = [
+        str(col).strip()
+        for col in allocation.columns
+    ]
 
     if "Assessment" in allocation.columns:
 
@@ -1445,13 +1479,11 @@ def process_phase0_allocation(allocation):
             columns={"Assessment": "Assessment Type"}
         )
 
-    elif "Assessment Type" not in allocation.columns:
+    if "Assessment Type" not in allocation.columns:
 
         raise ValueError(
-            "Neither Assessment nor Assessment Type column was found."
+            "Assessment column could not be identified."
         )
-
-    assessment_column = "Assessment Type"
 
     # ------------------------------------------------------
     # IDENTIFY CO COLUMNS
@@ -1461,10 +1493,7 @@ def process_phase0_allocation(allocation):
 
     for co in CO_LIST:
 
-        found = find_column(
-            allocation,
-            [co]
-        )
+        found = find_column(allocation, [co])
 
         if found is None:
 
@@ -1475,17 +1504,15 @@ def process_phase0_allocation(allocation):
         co_columns[co] = found
 
     # ------------------------------------------------------
-    # MAP PHASE 0 ASSESSMENTS TO PHASE 2
+    # MAP ASSESSMENTS
     # ------------------------------------------------------
 
     mapping = {
-
         "PA1": "PA1",
         "PA2": "PA2",
         "LE1": "LE",
         "LE": "LE",
         "LM": "LM"
-
     }
 
     weights = {}
@@ -1493,7 +1520,7 @@ def process_phase0_allocation(allocation):
     for _, row in allocation.iterrows():
 
         assessment_value = str(
-            row[assessment_column]
+            row["Assessment Type"]
         ).strip().upper()
 
         if assessment_value not in mapping:
