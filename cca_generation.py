@@ -3027,212 +3027,151 @@ if (
         use_container_width=True
     )
 # ==========================================================
-# 34. FINAL PHASE 0 × PHASE 2 CALCULATION
+# FINAL WEIGHTED CO MATRIX – ONE TOTAL ROW PER STUDENT
 # ==========================================================
 
-st.divider()
+weighted_matrix = calculate_weighted_cca(
+    edited_matrix,
+    allocation_weights
+)
 
-st.subheader("08 | Final Weighted CO Matrix")
+final_rows = []
 
-if allocation_weights is not None:
+for index, student in weighted_matrix.iterrows():
 
-    try:
+    # ------------------------------------------------------
+    # FOUR ASSESSMENT ROWS
+    # ------------------------------------------------------
 
-        # --------------------------------------------------
-        # CALCULATE WEIGHTED VALUES
-        # --------------------------------------------------
+    student_co_totals = {
+        co: 0.0 for co in CO_LIST
+    }
 
-        weighted_matrix = calculate_weighted_cca(
-            edited_matrix,
-            allocation_weights
-        )
+    for assessment_index, assessment in enumerate(
+        ASSESSMENT_ORDER
+    ):
 
-        # --------------------------------------------------
-        # STUDENT AND COURSE DETAILS
-        # --------------------------------------------------
+        row = {}
 
-        final_identity_columns = [
-            col for col in [
-                "Student Name",
-                "Admission Number"
-            ]
-            if col in weighted_matrix.columns
-        ]
+        # Display student details only on the first row
+        if assessment_index == 0:
 
-        weighted_matrix["Course Code"] = course_code
-
-        # --------------------------------------------------
-        # CREATE ASSESSMENT-WISE DISPLAY
-        # --------------------------------------------------
-
-        final_rows = []
-
-        for index, student in weighted_matrix.iterrows():
-
-            for assessment in ASSESSMENT_ORDER:
-
-                row = {
-
-                    "Student Name": (
-                        student["Student Name"]
-                        if assessment == "PA1"
-                        else ""
-                    ),
-
-                    "Admission Number": (
-                        student["Admission Number"]
-                        if assessment == "PA1"
-                        else ""
-                    ),
-
-                    "Course Code": (
-                        course_code
-                        if assessment == "PA1"
-                        else ""
-                    ),
-
-                    "Assessment": assessment
-
-                }
-
-                for co in CO_LIST:
-
-                    column = f"{assessment}_{co}_Weighted"
-
-                    value = pd.to_numeric(
-                        student.get(column, 0),
-                        errors="coerce"
-                    )
-
-                    row[co] = (
-                        round(float(value), 2)
-                        if pd.notna(value)
-                        else 0.0
-                    )
-
-                row["TOTAL"] = round(
-                    sum(row[co] for co in CO_LIST),
-                    2
-                )
-
-                final_rows.append(row)
-
-            # --------------------------------------------------
-            # STUDENT TOTAL ROW
-            # --------------------------------------------------
-
-            total_row = {
-
-                "Student Name": "",
-                "Admission Number": "",
-                "Course Code": "",
-                "Assessment": "TOTAL"
-
-            }
-
-            for co in CO_LIST:
-
-                total_row[co] = round(
-                    sum(
-                        float(
-                            weighted_matrix.loc[
-                                index,
-                                f"{assessment}_{co}_Weighted"
-                            ]
-                            if pd.notna(
-                                weighted_matrix.loc[
-                                    index,
-                                    f"{assessment}_{co}_Weighted"
-                                ]
-                            )
-                            else 0
-                        )
-                        for assessment in ASSESSMENT_ORDER
-                    ),
-                    2
-                )
-
-            total_row["TOTAL"] = round(
-                sum(total_row[co] for co in CO_LIST),
-                2
+            row["Student Name"] = student.get(
+                "Student Name", ""
             )
 
-            final_rows.append(total_row)
+            row["Admission Number"] = student.get(
+                "Admission Number", ""
+            )
 
-        final_weighted_output = pd.DataFrame(
-            final_rows,
-            columns=[
-                "Student Name",
-                "Admission Number",
-                "Course Code",
-                "Assessment",
-                "CO1",
-                "CO2",
-                "CO3",
-                "CO4",
-                "TOTAL"
-            ]
+            row["Course Code"] = course_code
+
+        else:
+
+            row["Student Name"] = ""
+            row["Admission Number"] = ""
+            row["Course Code"] = ""
+
+        row["Assessment"] = (
+            "LE1" if assessment == "LE" else assessment
         )
 
-        # --------------------------------------------------
-        # DISPLAY MATRIX
-        # --------------------------------------------------
+        assessment_total = 0.0
 
-        st.success(
-            "Final weighted CO matrix calculated successfully."
+        for co in CO_LIST:
+
+            weighted_column = f"{assessment}_{co}_Weighted"
+
+            value = pd.to_numeric(
+                weighted_matrix.loc[index, weighted_column],
+                errors="coerce"
+            )
+
+            value = 0.0 if pd.isna(value) else float(value)
+
+            row[co] = round(value, 2)
+
+            assessment_total += value
+            student_co_totals[co] += value
+
+        row["TOTAL"] = round(assessment_total, 2)
+
+        final_rows.append(row)
+
+    # ------------------------------------------------------
+    # ONLY ONE OVERALL TOTAL ROW AFTER LM
+    # ------------------------------------------------------
+
+    total_row = {
+        "Student Name": "",
+        "Admission Number": "",
+        "Course Code": "",
+        "Assessment": "TOTAL"
+    }
+
+    for co in CO_LIST:
+
+        total_row[co] = round(
+            student_co_totals[co], 2
         )
 
-        st.dataframe(
-            final_weighted_output,
-            use_container_width=True,
-            hide_index=True
-        )
-
-        st.session_state[
-            "final_weighted_matrix"
-        ] = final_weighted_output.copy()
-
-        # --------------------------------------------------
-        # CREATE PDF
-        # --------------------------------------------------
-
-        course_details = {
-
-            "Course Name": course_name,
-
-            "Course Code": course_code,
-
-            "Course Type": course_type
-
-        }
-
-        pdf_file = create_weighted_cca_pdf(
-            course_details,
-            final_weighted_output
-        )
-
-        # --------------------------------------------------
-        # PDF DOWNLOAD
-        # --------------------------------------------------
-
-        st.download_button(
-            label="📄 Download Final CCA PDF",
-            data=pdf_file,
-            file_name=f"Final_CCA_{course_code}.pdf",
-            mime="application/pdf",
-            use_container_width=True
-        )
-
-    except Exception as exc:
-
-        st.error(
-            f"Final weighted calculation error: {exc}"
-        )
-
-else:
-
-    st.warning(
-        "Phase 0 allocation is unavailable. "
-        "The final weighted CO matrix and PDF cannot "
-        "be generated."
+    total_row["TOTAL"] = round(
+        sum(student_co_totals.values()), 2
     )
+
+    final_rows.append(total_row)
+
+
+# ----------------------------------------------------------
+# CREATE FINAL DATAFRAME
+# ----------------------------------------------------------
+
+final_weighted_output = pd.DataFrame(
+    final_rows,
+    columns=[
+        "Student Name",
+        "Admission Number",
+        "Course Code",
+        "Assessment",
+        "CO1",
+        "CO2",
+        "CO3",
+        "CO4",
+        "TOTAL"
+    ]
+)
+
+
+# ----------------------------------------------------------
+# DISPLAY FINAL MATRIX
+# ----------------------------------------------------------
+
+st.markdown("### Final Weighted CO Matrix")
+
+st.dataframe(
+    final_weighted_output,
+    use_container_width=True,
+    hide_index=True
+)
+
+st.session_state["final_weighted_output"] = (
+    final_weighted_output
+)
+
+
+# ----------------------------------------------------------
+# GENERATE PDF
+# ----------------------------------------------------------
+
+pdf_file = create_weighted_cca_pdf(
+    course_details,
+    final_weighted_output
+)
+
+st.download_button(
+    label="📄 Download Final Weighted CO Matrix PDF",
+    data=pdf_file,
+    file_name=f"Weighted_CO_Matrix_{course_code}.pdf",
+    mime="application/pdf",
+    use_container_width=True
+)
