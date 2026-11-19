@@ -174,6 +174,7 @@ hr {
 </style>
 """, unsafe_allow_html=True)
 
+
 # ============================================================
 # 3. CONSTANTS
 # ============================================================
@@ -190,7 +191,8 @@ ND_REPLACEMENT_OPTIONS = [
 
 RESCALING_OPTIONS = [
     "Absolute",
-    "Relative"
+    "Relative",
+    "Moderation"
 ]
 
 CLUBBING_OPTIONS = [
@@ -409,9 +411,7 @@ def clean_data(df):
         )
 
     return df.reset_index(drop=True)
-
-
-# ============================================================
+    # ============================================================
 # 7. EXCEL EXPORT
 # ============================================================
 
@@ -540,6 +540,7 @@ if source == "Upload Phase 1 File":
 
         if uploaded_file.name.lower().endswith(".csv"):
             raw_data = pd.read_csv(uploaded_file)
+
         else:
             raw_data = pd.read_excel(uploaded_file)
 
@@ -793,6 +794,10 @@ combined_config["Best N"] = None
 
 combined_config["Weight"] = None
 
+# Used only when Rescaling Method is Moderation.
+# Enter the minimum pass percentage out of 100.
+combined_config["Minimum Pass Mark"] = None
+
 
 # ============================================================
 # 15. COMBINED CONFIGURATION TABLE EDITOR
@@ -854,6 +859,16 @@ if not st.session_state.finalized:
                 min_value=0.0,
                 step=0.5,
                 format="%.2f"
+            ),
+
+        "Minimum Pass Mark":
+            st.column_config.NumberColumn(
+                "Minimum Pass Mark (%)",
+                help="For Moderation only. Enter the pass percentage out of 100.",
+                min_value=0.0,
+                max_value=100.0,
+                step=1.0,
+                format="%.2f"
             )
     }
 
@@ -888,13 +903,14 @@ else:
 st.info(
     "Absolute: Mark Obtained / Max Marks × 100. "
     "Relative: Mark Obtained / Class Average × 100. "
+    "Moderation: If a student's percentage is below the entered "
+    "Minimum Pass Mark, it is raised to that minimum. "
+    "Enter Minimum Pass Mark only for Moderation rows. "
     "Average of All: averages all Assessment IDs. "
     "Average of Best: enter Best N. "
     "Weighted Average: enter a separate weight for each Assessment ID. "
     "Keep Best N and Weight blank when they are not required."
 )
-
-
 # ============================================================
 # 16. CONFIGURATION VALIDATION
 # ============================================================
@@ -905,7 +921,8 @@ def validate_combined_config(config):
         "Rescaling Method",
         "CO Calculation Method",
         "Best N",
-        "Weight"
+        "Weight",
+        "Minimum Pass Mark"
     ]
 
     for col in required_columns:
@@ -927,6 +944,34 @@ def validate_combined_config(config):
         raise ValueError(
             "Select a CO calculation method for every row."
         )
+
+    # Validate Minimum Pass Mark for Moderation rows.
+
+    moderation_rows = config[
+        config["Rescaling Method"] == "Moderation"
+    ]
+
+    if not moderation_rows.empty:
+
+        moderation_values = pd.to_numeric(
+            moderation_rows["Minimum Pass Mark"],
+            errors="coerce"
+        )
+
+        if moderation_values.isna().any():
+
+            raise ValueError(
+                "Enter a Minimum Pass Mark for every Moderation row."
+            )
+
+        if (
+            (moderation_values < 0)
+            | (moderation_values > 100)
+        ).any():
+
+            raise ValueError(
+                "Minimum Pass Mark must be between 0 and 100."
+            )
 
     for (assessment, co), group in config.groupby(
         ["Assessment", "CO"]
@@ -1004,7 +1049,8 @@ def calculate_rescaling(data, settings):
             "Assessment ID",
             "Date",
             "CO",
-            "Rescaling Method"
+            "Rescaling Method",
+            "Minimum Pass Mark"
         ]
     ].copy()
 
@@ -1047,11 +1093,15 @@ def calculate_rescaling(data, settings):
         if maximum <= 0:
             continue
 
+        # ABSOLUTE RESCALING
+
         if row["Rescaling Method"] == "Absolute":
 
             value = obtained / maximum * 100
 
-        else:
+        # RELATIVE RESCALING
+
+        elif row["Rescaling Method"] == "Relative":
 
             average = float(row["Class Average"])
 
@@ -1062,6 +1112,35 @@ def calculate_rescaling(data, settings):
             else:
 
                 value = 0
+
+        # MODERATION RESCALING
+
+        elif row["Rescaling Method"] == "Moderation":
+
+            # First calculate the absolute percentage.
+
+            value = obtained / maximum * 100
+
+            # Read the minimum pass percentage.
+
+            minimum_pass = float(
+                row["Minimum Pass Mark"]
+            )
+
+            # Raise the mark to the minimum pass mark
+            # only when the student scores below it.
+
+            if value < minimum_pass:
+
+                value = minimum_pass
+
+        else:
+
+            raise ValueError(
+                "Invalid rescaling method selected."
+            )
+
+        # Keep the final value between 0 and 100.
 
         result.loc[index, "Rescaled Value"] = min(
             max(value, 0),
@@ -1237,7 +1316,6 @@ def calculate_clubbing(rescaled, config):
         })
 
     return pd.DataFrame(results)
-
 
 # ============================================================
 # 19. GENERATE RESULTS
