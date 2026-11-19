@@ -2632,7 +2632,8 @@ if st.button(
 
 
 # ==========================================================
-# 33. EDITABLE ASSESSMENT MATRIX
+# ==========================================================
+# 33. STUDENT ASSESSMENT DISPLAY MATRIX
 # ==========================================================
 
 if (
@@ -2641,44 +2642,6 @@ if (
 ):
 
     st.divider()
-
-    st.subheader("07 | Editable Assessment Matrix")
-
-    # ------------------------------------------------------
-    # COURSE DETAILS ABOVE THE TABLE
-    # ------------------------------------------------------
-
-    st.markdown("### Course Details")
-
-    course_col1, course_col2, course_col3 = st.columns(3)
-
-    course_col1.text_input(
-        "Course Name",
-        value=str(course_name),
-        disabled=True,
-        key=f"display_course_name_{safe_key(course_code)}"
-    )
-
-    course_col2.text_input(
-        "Course Code",
-        value=str(course_code),
-        disabled=True,
-        key=f"display_course_code_{safe_key(course_code)}"
-    )
-
-    course_col3.text_input(
-        "Course Type",
-        value=str(course_type),
-        disabled=True,
-        key=f"display_course_type_{safe_key(course_code)}"
-    )
-
-    st.divider()
-
-    st.caption(
-        "Student details are filled automatically. "
-        "Edit the individual assessment–CO marks below."
-    )
 
     generated_table = st.session_state[
         "generated_table"
@@ -2703,6 +2666,19 @@ if (
         "Admission Number."
     ]
 
+    component_candidates = [
+        "Component (T/P)",
+        "Component",
+        "Component Type"
+    ]
+
+    programme_candidates = [
+        "Student Prog",
+        "Student Program",
+        "Programme",
+        "Program"
+    ]
+
     student_name_column = next(
         (
             col for col in student_name_candidates
@@ -2719,17 +2695,37 @@ if (
         None
     )
 
+    component_column = next(
+        (
+            col for col in component_candidates
+            if col in course_data.columns
+        ),
+        None
+    )
+
+    programme_column = next(
+        (
+            col for col in programme_candidates
+            if col in course_data.columns
+        ),
+        None
+    )
+
     # ------------------------------------------------------
-    # CREATE STUDENT DETAILS
+    # CREATE STUDENT DETAILS TABLE
     # ------------------------------------------------------
 
     detail_columns = [student_key]
 
-    if student_name_column:
-        detail_columns.append(student_name_column)
+    for col in [
+        student_name_column,
+        admission_column,
+        component_column,
+        programme_column
+    ]:
 
-    if admission_column and admission_column not in detail_columns:
-        detail_columns.append(admission_column)
+        if col and col not in detail_columns:
+            detail_columns.append(col)
 
     student_details = (
         course_data[detail_columns]
@@ -2740,40 +2736,73 @@ if (
     rename_columns = {}
 
     if student_name_column:
-        rename_columns[student_name_column] = "Student Name"
+        rename_columns[student_name_column] = "Name of Student"
 
     if admission_column:
         rename_columns[admission_column] = "Admission Number"
+
+    if component_column:
+        rename_columns[component_column] = "Component (T/P)"
+
+    if programme_column:
+        rename_columns[programme_column] = "Programme"
 
     student_details = student_details.rename(
         columns=rename_columns
     )
 
     # ------------------------------------------------------
-    # MERGE STUDENT DETAILS
+    # MERGE STUDENT DETAILS WITH GENERATED MATRIX
     # ------------------------------------------------------
 
     if student_key in generated_table.columns:
 
-        generated_table = generated_table.merge(
+        display_matrix = generated_table.merge(
             student_details,
             on=student_key,
             how="left"
         )
 
+    else:
+
+        display_matrix = generated_table.copy()
+
+    # ------------------------------------------------------
+    # ADD MISSING STUDENT DETAILS
+    # ------------------------------------------------------
+
+    for col in [
+        "Name of Student",
+        "Admission Number",
+        "Component (T/P)",
+        "Programme"
+    ]:
+
+        if col not in display_matrix.columns:
+            display_matrix[col] = ""
+
+    # ------------------------------------------------------
+    # ADD COURSE DETAILS
+    # ------------------------------------------------------
+
+    display_matrix["Course Name"] = course_name
+    display_matrix["Course Code"] = course_code
+
+    if "Programme" not in display_matrix.columns:
+        display_matrix["Programme"] = course_type
+
     # ------------------------------------------------------
     # REMOVE UNWANTED COLUMNS
     # ------------------------------------------------------
 
-    generated_table = generated_table.drop(
+    display_matrix = display_matrix.drop(
         columns=[
             "__StudentKey",
             "Student ID",
             "Student Id",
             "StudentID",
             "Student Key",
-            "Course Name",
-            "Course Code",
+            "Student Name",
             "Course Type",
             "PA1",
             "PA2",
@@ -2788,13 +2817,8 @@ if (
     )
 
     # ------------------------------------------------------
-    # KEEP ONLY REQUIRED COLUMNS
+    # REQUIRED ASSESSMENT COLUMNS
     # ------------------------------------------------------
-
-    required_columns = [
-        "Student Name",
-        "Admission Number"
-    ]
 
     assessment_co_columns = [
         f"{assessment}_{co}"
@@ -2802,72 +2826,78 @@ if (
         for co in CO_LIST
     ]
 
-    required_columns += assessment_co_columns
+    for col in assessment_co_columns:
 
-    for col in required_columns:
+        if col not in display_matrix.columns:
+            display_matrix[col] = 0.0
 
-        if col not in generated_table.columns:
+    # ------------------------------------------------------
+    # FINAL COLUMN ORDER
+    # ------------------------------------------------------
 
-            generated_table[col] = (
-                ""
-                if col in [
-                    "Student Name",
-                    "Admission Number"
-                ]
-                else 0.0
-            )
+    identity_display_columns = [
+        "Name of Student",
+        "Admission Number",
+        "Component (T/P)",
+        "Programme",
+        "Course Name",
+        "Course Code"
+    ]
 
-    generated_table = generated_table[
-        required_columns
+    display_matrix = display_matrix[
+        identity_display_columns
+        + assessment_co_columns
     ].copy()
 
-    # ------------------------------------------------------
-    # EDITABLE ASSESSMENT MATRIX
-    # ------------------------------------------------------
-
-    edited_matrix = st.data_editor(
-        generated_table,
-        use_container_width=True,
-        hide_index=True,
-        disabled=[
-            "Student Name",
-            "Admission Number"
-        ],
-        column_config={
-
-            "Student Name": st.column_config.TextColumn(
-                "Student Name",
-                disabled=True
-            ),
-
-            "Admission Number": st.column_config.TextColumn(
-                "Admission Number",
-                disabled=True
-            ),
-
-            **{
-                col: st.column_config.NumberColumn(
-                    col,
-                    min_value=0.0,
-                    max_value=100.0,
-                    step=0.5,
-                    format="%.2f"
-                )
-                for col in assessment_co_columns
-            }
-
-        },
-        key=f"assessment_editor_{safe_key(course_code)}"
+    display_matrix = display_matrix.reset_index(
+        drop=True
     )
 
     # ------------------------------------------------------
-    # SAVE EDITED MATRIX
+    # KEEP GENERATED MATRIX FOR CALCULATIONS
     # ------------------------------------------------------
 
-    st.session_state["edited_matrix"] = edited_matrix.copy()
+    edited_matrix = generated_table.copy()
+
+    # Add student details to calculation matrix
+    if student_key in edited_matrix.columns:
+
+        edited_matrix = edited_matrix.merge(
+            student_details,
+            on=student_key,
+            how="left"
+        )
+
+    edited_matrix = edited_matrix.rename(
+        columns={
+            "Name of Student": "Student Name"
+        }
+    )
+
+    # Ensure required student columns exist
+    if "Student Name" not in edited_matrix.columns:
+
+        if "Student Name" in student_details.columns:
+            edited_matrix["Student Name"] = ""
+
+        elif "Name of Student" in edited_matrix.columns:
+            edited_matrix["Student Name"] = (
+                edited_matrix["Name of Student"]
+            )
+
+        else:
+            edited_matrix["Student Name"] = ""
+
+    if "Admission Number" not in edited_matrix.columns:
+        edited_matrix["Admission Number"] = ""
+
+    # Store matrix in session state
+    st.session_state["edited_matrix"] = (
+        edited_matrix.copy()
+    )
 
     # ======================================================
-    # EXCEL EXPORT
+    # 34. ORIGINAL ASSESSMENT EXCEL EXPORT
     # ======================================================
 
     import io
@@ -2889,7 +2919,7 @@ if (
         engine="openpyxl"
     ) as writer:
 
-        edited_matrix.to_excel(
+        display_matrix.to_excel(
             writer,
             sheet_name="Assessment Matrix",
             index=False,
@@ -2964,21 +2994,11 @@ if (
 
             value_cell.fill = value_fill
 
-            label_cell.alignment = Alignment(
-                vertical="center"
-            )
-
-            value_cell.alignment = Alignment(
-                vertical="center"
-            )
-
             label_cell.border = thin_border
             value_cell.border = thin_border
 
-            worksheet.row_dimensions[row].height = 24
-
         # --------------------------------------------------
-        # HEADER FORMATTING – ROW 6
+        # HEADER FORMATTING
         # --------------------------------------------------
 
         for cell in worksheet[6]:
@@ -3023,7 +3043,6 @@ if (
                 cell.border = thin_border
 
                 if isinstance(cell.value, (int, float)):
-
                     cell.number_format = "0.00"
 
         # --------------------------------------------------
@@ -3032,29 +3051,31 @@ if (
 
         worksheet.column_dimensions["A"].width = 25
         worksheet.column_dimensions["B"].width = 22
+        worksheet.column_dimensions["C"].width = 18
+        worksheet.column_dimensions["D"].width = 18
+        worksheet.column_dimensions["E"].width = 30
+        worksheet.column_dimensions["F"].width = 22
 
         for col_index in range(
-            3,
-            len(required_columns) + 1
+            7,
+            len(display_matrix.columns) + 1
         ):
 
-            column_letter = get_column_letter(col_index)
-
             worksheet.column_dimensions[
-                column_letter
+                get_column_letter(col_index)
             ].width = 15
 
         # --------------------------------------------------
-        # FREEZE PANES AND FILTERS
+        # FREEZE AND FILTER
         # --------------------------------------------------
 
-        worksheet.freeze_panes = "C7"
+        worksheet.freeze_panes = "G7"
 
         last_column = get_column_letter(
-            len(required_columns)
+            len(display_matrix.columns)
         )
 
-        last_row = len(edited_matrix) + 6
+        last_row = len(display_matrix) + 6
 
         worksheet.auto_filter.ref = (
             f"A6:{last_column}{last_row}"
@@ -3062,19 +3083,11 @@ if (
 
         worksheet.sheet_view.showGridLines = False
 
-        worksheet.sheet_properties.pageSetUpPr.fitToPage = True
-
         worksheet.page_setup.orientation = "landscape"
         worksheet.page_setup.fitToWidth = 1
         worksheet.page_setup.fitToHeight = 0
 
-        worksheet.print_title_rows = "1:6"
-
     excel_buffer.seek(0)
-
-    # ------------------------------------------------------
-    # EXCEL DOWNLOAD BUTTON
-    # ------------------------------------------------------
 
     st.download_button(
         "📥 Download Excel File",
@@ -3088,250 +3101,215 @@ if (
     )
 
     # ======================================================
-    # 34. FINAL WEIGHTED CO MATRIX
-    # ONE TOTAL ROW PER STUDENT
-    # ======================================================
-     st.write("DEBUG - Allocation weights:")
-st.write(allocation_weights)
-
-st.write("DEBUG - Allocation type:")
-st.write(type(allocation_weights))
-    weighted_matrix = calculate_weighted_cca(
-        edited_matrix,
-        allocation_weights
-    )
-
-    final_rows = []
-
-    # ------------------------------------------------------
-    # PROCESS EACH STUDENT
-    # ------------------------------------------------------
-
-    for _, student in weighted_matrix.iterrows():
-
-        student_co_totals = {
-            co: 0.0 for co in CO_LIST
-        }
-
-        # --------------------------------------------------
-        # FOUR ASSESSMENT ROWS
-        # --------------------------------------------------
-
-        for assessment_index, assessment in enumerate(
-            ASSESSMENT_ORDER
-        ):
-
-            row = {}
-
-            # Student details only on first assessment row
-            if assessment_index == 0:
-
-                row["Student Name"] = student.get(
-                    "Student Name", ""
-                )
-
-                row["Admission Number"] = student.get(
-                    "Admission Number", ""
-                )
-
-                row["Course Code"] = course_code
-
-            else:
-
-                row["Student Name"] = ""
-                row["Admission Number"] = ""
-                row["Course Code"] = ""
-
-            row["Assessment"] = (
-                "LE1" if assessment == "LE" else assessment
-            )
-
-            assessment_total = 0.0
-
-            for co in CO_LIST:
-
-                weighted_column = (
-                    f"{assessment}_{co}_Weighted"
-                )
-
-                value = pd.to_numeric(
-                    student.get(weighted_column, 0),
-                    errors="coerce"
-                )
-
-                if pd.isna(value):
-                    value = 0.0
-
-                value = float(value)
-
-                row[co] = round(value, 2)
-
-                assessment_total += value
-
-                student_co_totals[co] += value
-
-            row["TOTAL"] = round(
-                assessment_total,
-                2
-            )
-
-            final_rows.append(row)
-
-        # --------------------------------------------------
-        # ONE OVERALL TOTAL ROW AFTER LM
-        # --------------------------------------------------
-
-        total_row = {
-            "Student Name": "",
-            "Admission Number": "",
-            "Course Code": "",
-            "Assessment": "TOTAL"
-        }
-
-        for co in CO_LIST:
-
-            total_row[co] = round(
-                student_co_totals[co],
-                2
-            )
-
-        total_row["TOTAL"] = round(
-            sum(student_co_totals.values()),
-            2
-        )
-
-        final_rows.append(total_row)
-
-    # ------------------------------------------------------
-    # CREATE FINAL DATAFRAME
-    # ------------------------------------------------------
-
-    final_weighted_output = pd.DataFrame(
-        final_rows,
-        columns=[
-            "Student Name",
-            "Admission Number",
-            "Course Code",
-            "Assessment",
-            "CO1",
-            "CO2",
-            "CO3",
-            "CO4",
-            "TOTAL"
-        ]
-    )
-
-        # ======================================================
-    # COMBINED STUDENT ASSESSMENT DISPLAY MATRIX
+    # 35. DISPLAY COMBINED ASSESSMENT MATRIX
     # ======================================================
 
     st.divider()
 
-    # Student details
-    display_matrix = edited_matrix.copy()
-
-    display_matrix.insert(
-        0, "Course Code", course_code
+    st.subheader(
+        "07 | Student Assessment and Final Assessment Matrix"
     )
 
-    display_matrix.insert(
-        0, "Course Name", course_name
-    )
+    # ------------------------------------------------------
+    # CHECK PHASE 0 ALLOCATION
+    # ------------------------------------------------------
 
-    display_matrix.insert(
-        0, "Programme", course_type
-    )
+    if allocation_weights is None:
 
-    # Component column
-    component_candidates = [
-        "Component (T/P)",
-        "Component",
-        "Component Type"
-    ]
-
-    component_column = next(
-        (
-            col for col in component_candidates
-            if col in course_data.columns
-        ),
-        None
-    )
-
-    if component_column:
-        display_matrix.insert(
-            0,
-            "Component (T/P)",
-            course_data[component_column].reindex(
-                display_matrix.index
-            ).values
+        st.warning(
+            "Final Assessment cannot be calculated because "
+            "the Phase 0 allocation is unavailable. "
+            "Check the Google Sheets connection and allocation data."
         )
+
     else:
-        display_matrix.insert(
-            0,
-            "Component (T/P)",
-            ""
-        )
 
-    # Rename student details
-    display_matrix = display_matrix.rename(
-        columns={
-            "Student Name": "Name of Student"
-        }
-    )
+        try:
 
-    # Final weighted CO values
-    final_totals = []
+            # --------------------------------------------------
+            # WEIGHTED CO CALCULATION
+            # --------------------------------------------------
 
-    for _, student in weighted_matrix.iterrows():
+            weighted_matrix = calculate_weighted_cca(
+                edited_matrix,
+                allocation_weights
+            )
 
-        final_totals.append({
-            "Final CO1": round(float(student.get("CO1", 0)), 2),
-            "Final CO2": round(float(student.get("CO2", 0)), 2),
-            "Final CO3": round(float(student.get("CO3", 0)), 2),
-            "Final CO4": round(float(student.get("CO4", 0)), 2)
-        })
+            # --------------------------------------------------
+            # FINAL WEIGHTED CO VALUES
+            # --------------------------------------------------
 
-    final_totals_df = pd.DataFrame(final_totals)
+            final_totals = pd.DataFrame({
+                "Final CO1": weighted_matrix["CO1"].fillna(0).round(2),
+                "Final CO2": weighted_matrix["CO2"].fillna(0).round(2),
+                "Final CO3": weighted_matrix["CO3"].fillna(0).round(2),
+                "Final CO4": weighted_matrix["CO4"].fillna(0).round(2)
+            })
 
-    display_matrix = display_matrix.reset_index(drop=True)
+            display_matrix = display_matrix.reset_index(
+                drop=True
+            )
 
-    display_matrix = pd.concat(
-        [
-            display_matrix,
-            final_totals_df
-        ],
-        axis=1
-    )
+            final_totals = final_totals.reset_index(
+                drop=True
+            )
 
-    # Display matrix
-    st.markdown("### Student Assessment and Final Assessment Matrix")
+            display_matrix = pd.concat(
+                [
+                    display_matrix,
+                    final_totals
+                ],
+                axis=1
+            )
 
-    st.dataframe(
-        display_matrix,
-        use_container_width=True,
-        hide_index=True
-    )
-    # ------------------------------------------------------
-    # GENERATE PDF
-    # ------------------------------------------------------
+            # --------------------------------------------------
+            # DISPLAY
+            # --------------------------------------------------
 
-    pdf_file = create_weighted_cca_pdf(
-        {
-            "course_name": course_name,
-            "course_code": course_code,
-            "course_type": course_type
-        },
-        final_weighted_output
-    )
+            st.dataframe(
+                display_matrix,
+                use_container_width=True,
+                hide_index=True
+            )
 
-    # ------------------------------------------------------
-    # PDF DOWNLOAD BUTTON
-    # ------------------------------------------------------
+            # --------------------------------------------------
+            # CREATE FINAL WEIGHTED OUTPUT
+            # --------------------------------------------------
 
-    st.download_button(
-        label="📄 Download Final Weighted CO Matrix PDF",
-        data=pdf_file,
-        file_name=f"Weighted_CO_Matrix_{course_code}.pdf",
-        mime="application/pdf",
-        use_container_width=True
-    )
+            final_rows = []
+
+            for _, student in weighted_matrix.iterrows():
+
+                student_co_totals = {
+                    co: 0.0 for co in CO_LIST
+                }
+
+                for assessment_index, assessment in enumerate(
+                    ASSESSMENT_ORDER
+                ):
+
+                    row = {}
+
+                    if assessment_index == 0:
+
+                        row["Student Name"] = student.get(
+                            "Student Name", ""
+                        )
+
+                        row["Admission Number"] = student.get(
+                            "Admission Number", ""
+                        )
+
+                        row["Course Code"] = course_code
+
+                    else:
+
+                        row["Student Name"] = ""
+                        row["Admission Number"] = ""
+                        row["Course Code"] = ""
+
+                    row["Assessment"] = (
+                        "LE1" if assessment == "LE" else assessment
+                    )
+
+                    assessment_total = 0.0
+
+                    for co in CO_LIST:
+
+                        weighted_column = (
+                            f"{assessment}_{co}_Weighted"
+                        )
+
+                        value = pd.to_numeric(
+                            student.get(weighted_column, 0),
+                            errors="coerce"
+                        )
+
+                        if pd.isna(value):
+                            value = 0.0
+
+                        value = float(value)
+
+                        row[co] = round(value, 2)
+
+                        assessment_total += value
+
+                        student_co_totals[co] += value
+
+                    row["TOTAL"] = round(
+                        assessment_total,
+                        2
+                    )
+
+                    final_rows.append(row)
+
+                # --------------------------------------------------
+                # ONE TOTAL ROW PER STUDENT
+                # --------------------------------------------------
+
+                total_row = {
+                    "Student Name": "",
+                    "Admission Number": "",
+                    "Course Code": "",
+                    "Assessment": "TOTAL"
+                }
+
+                for co in CO_LIST:
+
+                    total_row[co] = round(
+                        student_co_totals[co],
+                        2
+                    )
+
+                total_row["TOTAL"] = round(
+                    sum(student_co_totals.values()),
+                    2
+                )
+
+                final_rows.append(total_row)
+
+            final_weighted_output = pd.DataFrame(
+                final_rows,
+                columns=[
+                    "Student Name",
+                    "Admission Number",
+                    "Course Code",
+                    "Assessment",
+                    "CO1",
+                    "CO2",
+                    "CO3",
+                    "CO4",
+                    "TOTAL"
+                ]
+            )
+
+            st.session_state[
+                "final_weighted_output"
+            ] = final_weighted_output.copy()
+
+            # ==================================================
+            # 36. FINAL WEIGHTED CO MATRIX PDF
+            # ==================================================
+
+            pdf_file = create_weighted_cca_pdf(
+                {
+                    "course_name": course_name,
+                    "course_code": course_code,
+                    "course_type": course_type
+                },
+                final_weighted_output
+            )
+
+            st.download_button(
+                label="📄 Download Final Weighted CO Matrix PDF",
+                data=pdf_file,
+                file_name=f"Weighted_CO_Matrix_{course_code}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+
+        except Exception as exc:
+
+            st.error(
+                f"Unable to generate final weighted assessment: {exc}"
+            )
