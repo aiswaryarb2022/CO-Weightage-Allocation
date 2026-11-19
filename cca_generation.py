@@ -2687,8 +2687,8 @@ if (
     st.subheader("07 | Editable Assessment Matrix")
 
     st.caption(
-        "You can edit individual assessment–CO marks. "
-        "The final weighted CO matrix will use these edited values."
+        "Student details and course information are filled "
+        "automatically. Edit the individual assessment–CO marks."
     )
 
     generated_table = st.session_state[
@@ -2696,35 +2696,184 @@ if (
     ].copy()
 
     # ------------------------------------------------------
-    # COLUMNS THAT MUST NOT BE EDITED
+    # STUDENT DETAILS
     # ------------------------------------------------------
 
-    locked_columns = (
-        identity_columns
-        + [
-            "Course Name",
-            "Course Code",
-            "Course Type",
-            "PA1",
-            "PA2",
-            "LE",
-            "LM",
-            "CO1",
-            "CO2",
-            "CO3",
-            "CO4"
-        ]
+    student_key = "__StudentKey"
+
+    student_name_candidates = [
+        "Student Name",
+        "Name",
+        "Student"
+    ]
+
+    admission_candidates = [
+        "Admission Number",
+        "Admission No",
+        "Admission Number.",
+        "Admission No.",
+        "Admission Number "
+    ]
+
+    student_name_column = next(
+        (
+            col for col in student_name_candidates
+            if col in course_data.columns
+        ),
+        None
     )
 
-    # Individual assessment CO columns are editable.
-    editable_columns = [
+    admission_column = next(
+        (
+            col for col in admission_candidates
+            if col in course_data.columns
+        ),
+        None
+    )
+
+    # ------------------------------------------------------
+    # CREATE STUDENT DETAILS TABLE
+    # ------------------------------------------------------
+
+    detail_columns = [student_key]
+
+    if student_name_column:
+        detail_columns.append(student_name_column)
+
+    if admission_column and admission_column not in detail_columns:
+        detail_columns.append(admission_column)
+
+    student_details = (
+        course_data[detail_columns]
+        .drop_duplicates(subset=[student_key])
+        .copy()
+    )
+
+    rename_columns = {}
+
+    if student_name_column:
+        rename_columns[student_name_column] = "Student Name"
+
+    if admission_column:
+        rename_columns[admission_column] = "Admission Number"
+
+    student_details = student_details.rename(
+        columns=rename_columns
+    )
+
+    # ------------------------------------------------------
+    # MERGE STUDENT DETAILS INTO ASSESSMENT MATRIX
+    # ------------------------------------------------------
+
+    if student_key in generated_table.columns:
+
+        generated_table = generated_table.merge(
+            student_details,
+            on=student_key,
+            how="left"
+        )
+
+        generated_table = generated_table.drop(
+            columns=[student_key],
+            errors="ignore"
+        )
+
+    # ------------------------------------------------------
+    # REMOVE UNWANTED COLUMNS
+    # ------------------------------------------------------
+
+    generated_table = generated_table.drop(
+        columns=[
+            "Course Name",
+            "Course Code",
+            "Student ID",
+            "Student Id",
+            "StudentID",
+            "Student Key"
+        ],
+        errors="ignore"
+    )
+
+    # ------------------------------------------------------
+    # ARRANGE COLUMNS
+    # ------------------------------------------------------
+
+    first_columns = [
+        "Student Name",
+        "Admission Number",
+        "Course Type",
+        "PA1",
+        "PA2",
+        "LE",
+        "LM",
+        "CO1",
+        "CO2",
+        "CO3",
+        "CO4"
+    ]
+
+    assessment_co_columns = [
         f"{assessment}_{co}"
         for assessment in ASSESSMENT_ORDER
         for co in CO_LIST
     ]
 
+    ordered_columns = [
+        col for col in first_columns
+        if col in generated_table.columns
+    ]
+
+    ordered_columns += [
+        col for col in assessment_co_columns
+        if col in generated_table.columns
+    ]
+
+    # Retain any other existing columns as well.
+    remaining_columns = [
+        col for col in generated_table.columns
+        if col not in ordered_columns
+    ]
+
+    generated_table = generated_table[
+        ordered_columns + remaining_columns
+    ]
+
     # ------------------------------------------------------
-    # EDITOR
+    # LOCK STUDENT AND SUMMARY COLUMNS
+    # ------------------------------------------------------
+
+    locked_columns = [
+        "Student Name",
+        "Admission Number",
+        "Course Type",
+        "PA1",
+        "PA2",
+        "LE",
+        "LM",
+        "CO1",
+        "CO2",
+        "CO3",
+        "CO4"
+    ]
+
+    locked_columns = [
+        col for col in locked_columns
+        if col in generated_table.columns
+    ]
+
+    # ------------------------------------------------------
+    # EDITABLE ASSESSMENT CO COLUMNS
+    # ------------------------------------------------------
+
+    editable_columns = [
+        f"{assessment}_{co}"
+        for assessment in ASSESSMENT_ORDER
+        for co in CO_LIST
+        if f"{assessment}_{co}" in generated_table.columns
+    ]
+
+    # ------------------------------------------------------
+    # DISPLAY EDITABLE MATRIX
     # ------------------------------------------------------
 
     edited_matrix = st.data_editor(
@@ -2749,7 +2898,7 @@ if (
     )
 
     # ------------------------------------------------------
-    # UPDATE SESSION STATE
+    # SAVE EDITED MATRIX
     # ------------------------------------------------------
 
     st.session_state[
@@ -2757,7 +2906,7 @@ if (
     ] = edited_matrix.copy()
 
     # ------------------------------------------------------
-    # RECREATE EXCEL USING EDITED MATRIX
+    # EXCEL DOWNLOAD
     # ------------------------------------------------------
 
     excel_output = create_excel_file(
@@ -2774,7 +2923,6 @@ if (
         ),
         use_container_width=True
     )
-
 
     # ======================================================
     # 34. FINAL PHASE 0 × PHASE 2 CALCULATION
