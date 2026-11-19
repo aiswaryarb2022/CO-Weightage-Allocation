@@ -45,49 +45,83 @@ ND_REPLACEMENT_OPTIONS = [
 
 
 # ==========================================================
-# 2. GREEN THEME
+# 2. GREEN THEME – TEXT VISIBILITY FIX
 # ==========================================================
 
 st.markdown("""
 <style>
-.stApp, [data-testid="stHeader"] {
+
+/* Main application background */
+.stApp {
     background-color: #F5F9F5;
+    color: #222222 !important;
 }
 
-h1, h2, h3 {
-    color: #185C37;
+/* General text visibility */
+html, body, [class*="css"] {
+    color: #222222;
 }
 
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+    color: #185C37 !important;
+}
+
+/* Paragraphs, labels and captions */
+p, label, span, div,
+.stMarkdown,
+.stCaption,
+[data-testid="stWidgetLabel"] {
+    color: #222222;
+}
+
+/* Input fields */
+.stTextInput input,
+.stNumberInput input,
+.stDateInput input,
+.stSelectbox div[data-baseweb="select"] {
+    color: #222222 !important;
+    background-color: #FFFFFF !important;
+}
+
+/* Dropdown text */
+[data-baseweb="select"] * {
+    color: #222222 !important;
+}
+
+/* Buttons */
 .stButton > button,
 .stDownloadButton > button {
-    background: #21864B;
-    color: white;
+    background-color: #21864B !important;
+    color: #FFFFFF !important;
     border-radius: 8px;
-    border: 0;
+    border: none;
     font-weight: 600;
 }
 
+/* Button hover */
 .stButton > button:hover,
 .stDownloadButton > button:hover {
-    background: #176B39;
-    color: white;
+    background-color: #176B39 !important;
+    color: #FFFFFF !important;
 }
 
-[data-testid="stDataFrame"] {
-    border: 1px solid #D5E6D9;
-    border-radius: 8px;
+/* Data tables */
+[data-testid="stDataFrame"],
+[data-testid="stDataEditor"] {
+    color: #222222 !important;
 }
 
+/* Horizontal line */
 hr {
     border: none;
     border-top: 1px solid #DCE8DE;
     margin-top: 5px;
     margin-bottom: 5px;
 }
+
 </style>
 """, unsafe_allow_html=True)
-
-
 # ==========================================================
 # 3. HELPER FUNCTIONS
 # ==========================================================
