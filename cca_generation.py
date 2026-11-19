@@ -1709,12 +1709,15 @@ def create_final_weighted_output(
 # 17. CREATE FINAL CCA PDF
 # ==========================================================
 
-def create_weighted_cca_pdf(
-    course_details,
-    final_matrix
-):
+def create_weighted_cca_pdf(course_details, final_matrix):
 
-    buffer = BytesIO()
+    course_name = course_details.get("course_name", "")
+    course_code = course_details.get("course_code", "")
+    course_type = course_details.get("course_type", "")
+
+    buffer = io.BytesIO()
+
+    
 
     document = SimpleDocTemplate(
         buffer,
@@ -3164,7 +3167,11 @@ st.session_state["final_weighted_output"] = (
 # ----------------------------------------------------------
 
 pdf_file = create_weighted_cca_pdf(
-    course_details,
+    {
+        "course_name": course_name,
+        "course_code": course_code,
+        "course_type": course_type
+    },
     final_weighted_output
 )
 
