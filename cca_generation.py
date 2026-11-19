@@ -1,198 +1,32 @@
-import io
-import pandas as pd
 import streamlit as st
-
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.platypus import (
-    SimpleDocTemplate,
-    Table,
-    TableStyle,
-    Paragraph,
-    Spacer
-)
-from reportlab.lib.styles import getSampleStyleSheet
+import pandas as pd
+import numpy as np
+import re
+import json
+from io import BytesIO
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
 
 
-# ============================================================
+# ==========================================================
 # 1. PAGE CONFIGURATION
-# ============================================================
+# ==========================================================
 
 st.set_page_config(
-    page_title="CCA Generation",
+    page_title="CO Assessment Dashboard",
     page_icon="📊",
     layout="wide"
 )
 
-st.title("CCA Generation")
-st.caption("Phase 2 – Assessment Rescaling and CO Consolidation")
+ASSESSMENT_ORDER = ["PA1", "PA2", "LE", "LM"]
+ALL_ASSESSMENTS = ASSESSMENT_ORDER + ["ND"]
 
-
-# ============================================================
-# 2. THEME
-# ============================================================
-
-st.markdown("""
-<style>
-
-/* Main background */
-.stApp {
-    background-color: #F3F6F1;
-    color: #183D32;
-}
-
-/* Main content */
-.main .block-container {
-    padding-top: 2rem;
-    padding-bottom: 2rem;
-}
-
-/* Headings */
-h1, h2, h3, h4 {
-    color: #183D32 !important;
-    font-weight: 700 !important;
-}
-
-/* Normal text and labels */
-p, label, span {
-    color: #263C32;
-}
-
-/* Text input boxes */
-div[data-testid="stTextInput"] input,
-div[data-testid="stNumberInput"] input,
-div[data-testid="stDateInput"] input,
-div[data-testid="stTextArea"] textarea,
-div[data-baseweb="input"] input,
-div[data-baseweb="textarea"] textarea {
-
-    background-color: #FFFFFF !important;
-    color: #183D32 !important;
-    -webkit-text-fill-color: #183D32 !important;
-    border: 1.5px solid #789887 !important;
-    border-radius: 7px !important;
-    font-weight: 600 !important;
-}
-
-/* Placeholder text */
-input::placeholder,
-textarea::placeholder {
-    color: #718477 !important;
-    -webkit-text-fill-color: #718477 !important;
-    opacity: 1 !important;
-}
-
-/* Dropdown boxes */
-div[data-baseweb="select"] > div {
-    background-color: #FFFFFF !important;
-    color: #183D32 !important;
-    border: 1.5px solid #789887 !important;
-    border-radius: 7px !important;
-}
-
-/* Selected dropdown text */
-div[data-baseweb="select"] span {
-    color: #183D32 !important;
-}
-
-/* Dropdown menu */
-div[data-baseweb="popover"],
-div[data-baseweb="popover"] ul {
-    background-color: #FFFFFF !important;
-}
-
-div[data-baseweb="popover"] li {
-    color: #183D32 !important;
-}
-
-/* Data tables */
-div[data-testid="stDataFrame"],
-div[data-testid="stDataEditor"] {
-    background-color: #FFFFFF !important;
-    border: 1px solid #A6B9AA !important;
-    border-radius: 10px !important;
-}
-
-/* Buttons */
-.stButton button,
-.stDownloadButton button {
-    background-color: #183D32 !important;
-    color: #FFFFFF !important;
-    border: 1px solid #183D32 !important;
-    border-radius: 8px !important;
-    font-weight: 600 !important;
-}
-
-/* Button hover */
-.stButton button:hover,
-.stDownloadButton button:hover {
-    background-color: #285C49 !important;
-    color: #FFFFFF !important;
-}
-
-/* Radio buttons */
-div[data-testid="stRadio"] label {
-    color: #183D32 !important;
-}
-
-/* File uploader */
-div[data-testid="stFileUploader"] {
-    background-color: #FFFFFF !important;
-    border: 1px solid #789887 !important;
-    border-radius: 10px !important;
-    padding: 12px;
-}
-
-/* Metric cards */
-div[data-testid="stMetric"] {
-    background-color: #FFFFFF !important;
-    border: 1px solid #A6B9AA !important;
-    padding: 15px;
-    border-radius: 10px;
-}
-
-/* Metric values */
-div[data-testid="stMetricValue"] {
-    color: #183D32 !important;
-}
-
-/* Captions */
-.stCaption {
-    color: #526B5D !important;
-}
-
-/* Alerts */
-div[data-testid="stAlert"] {
-    border-radius: 8px;
-}
-
-/* Divider */
-hr {
-    border-color: #A6B9AA !important;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-
-# ============================================================
-# 3. CONSTANTS
-# ============================================================
-
-ASSESSMENTS = ["PA1", "PA2", "LM", "LE", "ND"]
-
-ND_REPLACEMENT_OPTIONS = [
-    "ND",
-    "PA1",
-    "PA2",
-    "LM",
-    "LE"
-]
+CO_LIST = ["CO1", "CO2", "CO3", "CO4"]
 
 RESCALING_OPTIONS = [
     "Absolute",
     "Relative",
-    "Moderation"
+    "Moderate"
 ]
 
 CLUBBING_OPTIONS = [
@@ -201,167 +35,292 @@ CLUBBING_OPTIONS = [
     "Weighted Average"
 ]
 
-REQUIRED_COLUMNS = [
-    "Reg No",
-    "Admission No",
-    "Student Name",
-    "Student Prog",
-    "Course Name",
-    "Course Code",
-    "Course Type",
-    "Assessment",
-    "CO",
-    "Mark Obtained",
-    "Max Marks"
+ND_REPLACEMENT_OPTIONS = [
+    "Do not change",
+    "PA1",
+    "PA2",
+    "LE",
+    "LM"
 ]
 
 
-# ============================================================
-# 4. SESSION STATE
-# ============================================================
+# ==========================================================
+# 2. GREEN THEME
+# ==========================================================
 
-defaults = {
-    "nd_confirmed": False,
-    "nd_mapping": None,
-    "edited_config": None,
-    "generated": False,
-    "finalized": False,
-    "generation_results": None,
-    "rescaled_results": None,
-    "clubbed_results": None,
-    "final_matrix": None
+st.markdown("""
+<style>
+.stApp, [data-testid="stHeader"] {
+    background-color: #F5F9F5;
 }
 
-for key, value in defaults.items():
+h1, h2, h3 {
+    color: #185C37;
+}
 
-    if key not in st.session_state:
-        st.session_state[key] = value
+.stButton > button,
+.stDownloadButton > button {
+    background: #21864B;
+    color: white;
+    border-radius: 8px;
+    border: 0;
+    font-weight: 600;
+}
 
+.stButton > button:hover,
+.stDownloadButton > button:hover {
+    background: #176B39;
+    color: white;
+}
 
-# ============================================================
-# 5. SAMPLE DATA
-# ============================================================
+[data-testid="stDataFrame"] {
+    border: 1px solid #D5E6D9;
+    border-radius: 8px;
+}
 
-def sample_data():
-
-    students = [
-        ("UG26016", "AD20261105", "Adithya Raj", "BSc Mathematics"),
-        ("UG26017", "AD20261106", "Anjali S", "BSc Mathematics"),
-        ("UG26018", "AD20261107", "Biju K", "BSc Mathematics"),
-        ("UG26019", "AD20261108", "Devika R", "BSc Mathematics"),
-        ("UG26020", "AD20261109", "Farhan M", "BSc Mathematics"),
-        ("UG26021", "AD20261110", "Gopika P", "BSc Mathematics")
-    ]
-
-    exams = [
-        ("PA1", "PA1-01", "2026-08-10", ["CO1", "CO2", "CO3"], 20),
-        ("PA1", "PA1-02", "2026-08-17", ["CO1", "CO2", "CO3"], 20),
-        ("PA2", "PA2-01", "2026-09-10", ["CO1", "CO2", "CO3"], 25),
-        ("LM", "LM-01", "2026-09-20", ["CO2", "CO3", "CO4"], 30),
-        ("LE", "LE-01", "2026-10-10", ["CO1", "CO2", "CO3", "CO4"], 25),
-        ("ND", "ND-01", "2026-10-20", ["CO1", "CO2"], 20)
-    ]
-
-    rows = []
-
-    for i, student in enumerate(students):
-
-        reg, adm, name, prog = student
-
-        for j, exam in enumerate(exams):
-
-            assessment, exam_id, exam_date, cos, maximum = exam
-
-            for k, co in enumerate(cos):
-
-                fraction = (
-                    0.50 + ((i * 7 + j * 5 + k * 3) % 41) / 100
-                )
-
-                mark = round(maximum * fraction, 1)
-
-                rows.append([
-                    reg,
-                    adm,
-                    name,
-                    prog,
-                    "Research Methodology",
-                    "ST040303",
-                    "Major",
-                    assessment,
-                    co,
-                    mark,
-                    maximum,
-                    exam_date,
-                    exam_id
-                ])
-
-    columns = REQUIRED_COLUMNS + [
-        "Date",
-        "Assessment ID"
-    ]
-
-    return pd.DataFrame(rows, columns=columns)
+hr {
+    border: none;
+    border-top: 1px solid #DCE8DE;
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+</style>
+""", unsafe_allow_html=True)
 
 
-# ============================================================
-# 6. DATA CLEANING
-# ============================================================
+# ==========================================================
+# 3. HELPER FUNCTIONS
+# ==========================================================
 
-def clean_data(df):
+def normalize_column_name(name):
+    return re.sub(
+        r"[^a-z0-9]",
+        "",
+        str(name).lower()
+    )
 
-    df = df.copy()
 
-    df.columns = [
-        str(c).strip()
+def find_column(df, aliases):
+    lookup = {
+        normalize_column_name(c): c
         for c in df.columns
+    }
+
+    for alias in aliases:
+        found = lookup.get(
+            normalize_column_name(alias)
+        )
+
+        if found is not None:
+            return found
+
+    return None
+
+
+def standardize_columns(df):
+
+    aliases = {
+        "Course Name": [
+            "Course Name", "Course", "Subject Name"
+        ],
+        "Course Code": [
+            "Course Code", "Subject Code"
+        ],
+        "Course Type": [
+            "Course Type", "Course Category", "Category"
+        ],
+        "Assessment": [
+            "Assessment", "Assessment Type", "Exam"
+        ],
+        "CO": [
+            "CO", "Course Outcome", "Course Outcomes"
+        ],
+        "Mark Obtained": [
+            "Mark Obtained", "Marks Obtained", "Mark", "Marks"
+        ],
+        "Max Marks": [
+            "Max Marks", "Maximum Marks",
+            "Total Marks", "Maximum Mark"
+        ],
+        "Date": [
+            "Date", "Assessment Date", "Exam Date"
+        ],
+        "Reg No": [
+            "Reg No", "Register Number",
+            "Registration Number", "Register No", "Roll No"
+        ],
+        "Admission No": [
+            "Admission No", "Admission Number"
+        ],
+        "Student ID": [
+            "Student ID", "Student Number"
+        ],
+        "Student Name": [
+            "Student Name", "Name"
+        ],
+        "Student Prog": [
+            "Student Prog", "Student Program", "Programme"
+        ]
+    }
+
+    rename = {}
+
+    for target, names in aliases.items():
+
+        if target not in df.columns:
+
+            source = find_column(df, names)
+
+            if source is not None:
+                rename[source] = target
+
+    return df.rename(columns=rename)
+
+
+def normalize_assessment(value):
+
+    value = (
+        str(value)
+        .strip()
+        .upper()
+        .replace(" ", "")
+        .replace("-", "")
+        .replace("_", "")
+    )
+
+    mapping = {
+        "PA01": "PA1",
+        "PA1": "PA1",
+        "PA02": "PA2",
+        "PA2": "PA2",
+        "LE1": "LE",
+        "LE": "LE",
+        "LABEXAM": "LE",
+        "LM1": "LM",
+        "LM": "LM",
+        "ND": "ND"
+    }
+
+    return mapping.get(value, value)
+
+
+def normalize_co(value):
+
+    match = re.search(
+        r"(\d+)",
+        str(value).strip().upper()
+    )
+
+    if match:
+        return f"CO{int(match.group(1))}"
+
+    return str(value).strip().upper()
+
+
+def date_key(value):
+
+    if pd.isna(value):
+        return "Not specified"
+
+    parsed = pd.to_datetime(
+        value,
+        errors="coerce",
+        dayfirst=True
+    )
+
+    if pd.isna(parsed):
+        return "Not specified"
+
+    return parsed.strftime("%d-%m-%Y")
+
+
+def safe_key(value):
+
+    return re.sub(
+        r"[^a-zA-Z0-9_]",
+        "_",
+        str(value)
+    )
+
+
+def clean_identifier(value):
+
+    if pd.isna(value):
+        return ""
+
+    value = str(value).strip()
+
+    if value.lower() in [
+        "", "nan", "none", "null",
+        "unknown", "na", "n/a"
+    ]:
+        return ""
+
+    return value
+
+
+def read_uploaded_file(uploaded_file):
+
+    name = uploaded_file.name.lower()
+
+    if name.endswith(".csv"):
+        return pd.read_csv(uploaded_file)
+
+    return pd.read_excel(uploaded_file)
+
+
+# ==========================================================
+# 4. PREPARE DATA
+# ==========================================================
+
+def prepare_data(raw_df):
+
+    df = standardize_columns(raw_df.copy())
+
+    required = [
+        "Course Name",
+        "Assessment",
+        "CO",
+        "Mark Obtained"
     ]
 
     missing = [
-        c for c in REQUIRED_COLUMNS
+        c for c in required
         if c not in df.columns
     ]
 
     if missing:
-
         raise ValueError(
-            "Missing columns: " + ", ".join(missing)
+            "Missing required columns: "
+            + ", ".join(missing)
         )
 
-    if "Date" not in df.columns:
-        df["Date"] = pd.NaT
+    for col, default in [
+        ("Course Code", "Not specified"),
+        ("Course Type", "Not specified")
+    ]:
 
-    if "Assessment ID" not in df.columns:
-        df["Assessment ID"] = ""
-
-    df = df[
-        REQUIRED_COLUMNS + ["Date", "Assessment ID"]
-    ].copy()
-
-    text_columns = [
-        "Reg No",
-        "Admission No",
-        "Student Name",
-        "Student Prog",
-        "Course Name",
-        "Course Code",
-        "Course Type",
-        "Assessment",
-        "CO",
-        "Assessment ID"
-    ]
-
-    for col in text_columns:
+        if col not in df.columns:
+            df[col] = default
 
         df[col] = (
             df[col]
-            .fillna("")
+            .fillna(default)
             .astype(str)
             .str.strip()
         )
 
-    df["Assessment"] = df["Assessment"].str.upper()
-    df["CO"] = df["CO"].str.upper()
+    if "Max Marks" not in df.columns:
+        df["Max Marks"] = 100
+
+    if "Date" not in df.columns:
+        df["Date"] = pd.NaT
+
+    df["Date"] = pd.to_datetime(
+        df["Date"],
+        errors="coerce",
+        dayfirst=True
+    ).dt.normalize()
 
     df["Mark Obtained"] = pd.to_numeric(
         df["Mark Obtained"],
@@ -371,1221 +330,1321 @@ def clean_data(df):
     df["Max Marks"] = pd.to_numeric(
         df["Max Marks"],
         errors="coerce"
+    ).fillna(100)
+
+    df.loc[
+        df["Max Marks"] <= 0,
+        "Max Marks"
+    ] = 100
+
+    df["Assessment"] = (
+        df["Assessment"].apply(normalize_assessment)
     )
 
-    df["Date"] = pd.to_datetime(
-        df["Date"],
-        errors="coerce"
+    df["CO"] = df["CO"].apply(normalize_co)
+
+    preferred_ids = [
+        "Reg No",
+        "Admission No",
+        "Student ID",
+        "Student Name"
+    ]
+
+    available_ids = [
+        c for c in preferred_ids
+        if c in df.columns
+    ]
+
+    if not available_ids:
+        raise ValueError(
+            "A student identifier is required. "
+            "Include Reg No, Admission No, Student ID "
+            "or Student Name."
+        )
+
+    def get_student_identifier(row):
+
+        for col in available_ids:
+
+            identifier = clean_identifier(row[col])
+
+            if identifier:
+                return identifier
+
+        return f"Missing_ID_{row.name}"
+
+    df["__StudentKey"] = df.apply(
+        get_student_identifier,
+        axis=1
     )
+
+    identity_columns = ["__StudentKey"]
 
     df = df.dropna(
-        subset=["Mark Obtained", "Max Marks"]
+        subset=["Mark Obtained", "Course Name"]
     ).copy()
 
     df = df[
-        (df["Max Marks"] > 0)
-        & (df["Mark Obtained"] >= 0)
-        & (df["Mark Obtained"] <= df["Max Marks"])
+        df["Assessment"].isin(ALL_ASSESSMENTS)
+        & df["CO"].isin(CO_LIST)
     ].copy()
 
-    invalid = sorted(
-        set(df["Assessment"]) - set(ASSESSMENTS)
+    if df.empty:
+        raise ValueError(
+            "No valid assessment records were found. "
+            "Check the Assessment, CO and Mark Obtained columns."
+        )
+
+    return df, identity_columns
+
+
+# ==========================================================
+# 5. ND REPLACEMENT
+# ==========================================================
+
+def build_nd_replacement_table(course_data):
+
+    nd_data = course_data[
+        course_data["Assessment"] == "ND"
+    ].copy()
+
+    if nd_data.empty:
+        return pd.DataFrame()
+
+    nd_rows = []
+
+    for row_index, row in nd_data.iterrows():
+
+        nd_rows.append({
+            "Record Index": row_index,
+            "Date": date_key(row["Date"]),
+            "ND CO": row["CO"],
+            "Mark Obtained": row["Mark Obtained"],
+            "Replace With": "Do not change"
+        })
+
+    return pd.DataFrame(nd_rows)
+
+
+def apply_nd_replacements(
+    course_data,
+    edited_nd_config
+):
+
+    updated_data = course_data.copy()
+
+    for _, row in edited_nd_config.iterrows():
+
+        row_index = int(row["Record Index"])
+
+        updated_data.loc[
+            row_index,
+            "Assessment"
+        ] = row["Replace With"]
+
+    return updated_data
+
+
+# ==========================================================
+# 6. DETECT REPEATED CO COMBINATIONS
+# ==========================================================
+
+def get_repeated_co_summary(course_data):
+
+    """
+    Clubbing is required only if the same CO occurs
+    on more than one date within the same assessment.
+
+    Student records are not counted as separate entries.
+    """
+
+    temp = course_data.copy()
+
+    temp["Date Label"] = temp["Date"].apply(date_key)
+
+    counts = (
+        temp.groupby(
+            ["Assessment", "CO"],
+            dropna=False
+        )["Date Label"]
+        .nunique()
     )
 
-    if invalid:
+    repeated_summary = {}
 
-        raise ValueError(
-            "Invalid assessments: " + ", ".join(invalid)
+    for key, count in counts.items():
+
+        if count > 1:
+            repeated_summary[key] = int(count)
+
+    return repeated_summary
+
+
+# ==========================================================
+# 7. CREATE ORDERED ASSESSMENT-CO ROWS
+# ==========================================================
+
+def get_settings_rows(course_data):
+
+    settings = course_data[
+        ["Assessment", "Date", "CO"]
+    ].copy()
+
+    settings["Date Label"] = (
+        settings["Date"].apply(date_key)
+    )
+
+    settings = settings.drop_duplicates(
+        ["Assessment", "Date Label", "CO"]
+    ).copy()
+
+    settings["_assessment_order"] = (
+        settings["Assessment"].map({
+            a: i for i, a in enumerate(ASSESSMENT_ORDER)
+        })
+    )
+
+    settings["_date_order"] = pd.to_datetime(
+        settings["Date Label"],
+        format="%d-%m-%Y",
+        errors="coerce"
+    )
+
+    settings["_co_order"] = (
+        settings["CO"].map({
+            co: i for i, co in enumerate(CO_LIST)
+        })
+    )
+
+    settings = settings.sort_values(
+        [
+            "_assessment_order",
+            "_date_order",
+            "_co_order"
+        ],
+        na_position="last"
+    )
+
+    return settings[
+        ["Assessment", "Date Label", "CO"]
+    ].reset_index(drop=True)
+
+
+# ==========================================================
+# 8. CALCULATE RESCALED RESULTS
+# ==========================================================
+
+def calculate_results(
+    data,
+    identity_columns,
+    config_map
+):
+
+    class_average = {}
+
+    for (
+        assessment_name,
+        assessment_date,
+        co_name
+    ), class_group in data.groupby(
+        ["Assessment", "Date", "CO"],
+        dropna=False
+    ):
+
+        class_average[
+            (
+                assessment_name,
+                date_key(assessment_date),
+                co_name
+            )
+        ] = class_group["Mark Obtained"].mean()
+
+    group_cols = (
+        identity_columns
+        + [
+            "Course Name",
+            "Course Code",
+            "Course Type",
+            "Assessment",
+            "Date",
+            "CO"
+        ]
+    )
+
+    rows = []
+
+    for key, group in data.groupby(
+        group_cols,
+        dropna=False,
+        sort=False
+    ):
+
+        values = dict(
+            zip(
+                group_cols,
+                key if isinstance(key, tuple) else (key,)
+            )
         )
 
-    if df.empty:
-        raise ValueError("No valid marks found.")
+        assessment = values["Assessment"]
+        dlabel = date_key(values["Date"])
+        co = values["CO"]
 
-    missing_id = df["Assessment ID"].eq("")
-
-    if missing_id.any():
-
-        df.loc[missing_id, "Assessment ID"] = (
-            df.loc[missing_id, "Assessment"]
-            + "-01"
+        settings = config_map.get(
+            (assessment, dlabel, co)
         )
 
-    return df.reset_index(drop=True)
-    # ============================================================
-# 7. EXCEL EXPORT
-# ============================================================
+        if settings is None:
+            raise ValueError(
+                f"Calculation settings are missing for "
+                f"{assessment}, {dlabel}, {co}."
+            )
 
-def create_excel(sheets):
+        avg_mark = group["Mark Obtained"].mean()
+        avg_max = group["Max Marks"].mean()
 
-    output = io.BytesIO()
+        class_avg = class_average.get(
+            (assessment, dlabel, co),
+            np.nan
+        )
+
+        method = settings["Rescaling Method"]
+
+        # --------------------------------------------------
+        # RELATIVE RESCALING
+        # --------------------------------------------------
+
+        if method == "Relative":
+
+            if pd.notna(class_avg) and class_avg != 0:
+
+                rescaled = (
+                    avg_mark / class_avg
+                ) * 20
+
+                if rescaled < 1:
+                    rescaled = 1
+
+            else:
+                rescaled = np.nan
+
+        # --------------------------------------------------
+        # ABSOLUTE RESCALING
+        # --------------------------------------------------
+
+        elif method == "Absolute":
+
+            if pd.notna(avg_max) and avg_max > 0:
+
+                rescaled = (
+                    avg_mark / avg_max
+                ) * 100
+
+            else:
+                rescaled = np.nan
+
+        # --------------------------------------------------
+        # MODERATE RESCALING
+        # The minimum mark is used when the obtained mark
+        # is below the teacher-entered minimum mark.
+        # --------------------------------------------------
+
+        elif method == "Moderate":
+
+            minimum_mark = settings.get(
+                "Minimum Mark",
+                0.0
+            )
+
+            adjusted_mark = max(
+                avg_mark,
+                minimum_mark
+            )
+
+            if pd.notna(avg_max) and avg_max > 0:
+
+                rescaled = (
+                    adjusted_mark / avg_max
+                ) * 100
+
+            else:
+                rescaled = np.nan
+
+        else:
+            rescaled = np.nan
+
+        result_row = {
+            c: values[c]
+            for c in identity_columns
+        }
+
+        result_row.update({
+            "Course Name": values["Course Name"],
+            "Course Code": values["Course Code"],
+            "Course Type": values["Course Type"],
+            "Assessment": assessment,
+            "Date Label": dlabel,
+            "CO": co,
+            "Original Mark": avg_mark,
+            "Rescaling Method": method,
+            "Rescaling Reference": class_avg,
+            "Rescaled Mark": rescaled
+        })
+
+        rows.append(result_row)
+
+    return pd.DataFrame(rows)
+
+
+# ==========================================================
+# 9. CLUBBING SAME CO ACROSS DIFFERENT DATES
+# ==========================================================
+
+def aggregate_co_score(
+    group,
+    assessment,
+    co,
+    repeated_pairs,
+    clubbing_map,
+    best_n_map,
+    co_weights
+):
+
+    co_rows = group[
+        (group["Assessment"] == assessment)
+        & (group["CO"] == co)
+    ].dropna(
+        subset=["Rescaled Mark"]
+    )
+
+    if co_rows.empty:
+        return np.nan
+
+    date_values = (
+        co_rows.groupby("Date Label")["Rescaled Mark"]
+        .mean()
+    )
+
+    combination = (assessment, co)
+
+    # ------------------------------------------------------
+    # NON-REPEATED CO
+    # No clubbing is needed.
+    # ------------------------------------------------------
+
+    if combination not in repeated_pairs:
+
+        return float(date_values.mean())
+
+    # ------------------------------------------------------
+    # REPEATED CO
+    # Use the single selected clubbing method.
+    # ------------------------------------------------------
+
+    method = clubbing_map.get(combination)
+
+    if method == "Average of All":
+
+        return float(date_values.mean())
+
+    elif method == "Average of Best":
+
+        best_n = best_n_map.get(
+            combination,
+            1
+        )
+
+        best_values = (
+            date_values
+            .sort_values(ascending=False)
+            .head(best_n)
+        )
+
+        return float(best_values.mean())
+
+    elif method == "Weighted Average":
+
+        weights = pd.Series(
+            {
+                dlabel: co_weights.get(
+                    (assessment, co, dlabel),
+                    0.0
+                )
+                for dlabel in date_values.index
+            },
+            dtype=float
+        )
+
+        weights = weights.reindex(
+            date_values.index
+        ).fillna(0)
+
+        if weights.sum() <= 0:
+            return np.nan
+
+        return float(
+            np.average(
+                date_values.values,
+                weights=weights.values
+            )
+        )
+
+    return np.nan
+
+
+# ==========================================================
+# 10. CREATE FINAL ASSESSMENT MATRIX
+# ==========================================================
+
+def make_output_table(
+    results,
+    identity_columns,
+    repeated_pairs,
+    clubbing_map,
+    best_n_map,
+    co_weights
+):
+
+    keys = (
+        identity_columns
+        + [
+            "Course Name",
+            "Course Code",
+            "Course Type"
+        ]
+    )
+
+    output_rows = []
+
+    for key, group in results.groupby(
+        keys,
+        dropna=False,
+        sort=False
+    ):
+
+        key_values = (
+            key if isinstance(key, tuple)
+            else (key,)
+        )
+
+        base = dict(zip(keys, key_values))
+
+        row = {
+            "Course Name": base["Course Name"],
+            "Course Code": base["Course Code"]
+        }
+
+        # --------------------------------------------------
+        # ASSESSMENT-WISE VALUES
+        # --------------------------------------------------
+
+        for assessment in ASSESSMENT_ORDER:
+
+            co_scores = []
+
+            for co in CO_LIST:
+
+                score = aggregate_co_score(
+                    group,
+                    assessment,
+                    co,
+                    repeated_pairs,
+                    clubbing_map,
+                    best_n_map,
+                    co_weights
+                )
+
+                if pd.notna(score):
+                    co_scores.append(score)
+
+            row[assessment] = (
+                float(np.mean(co_scores))
+                if co_scores
+                else np.nan
+            )
+
+        # --------------------------------------------------
+        # CO-WISE VALUES
+        # --------------------------------------------------
+
+        for co in CO_LIST:
+
+            assessment_scores = []
+
+            for assessment in ASSESSMENT_ORDER:
+
+                score = aggregate_co_score(
+                    group,
+                    assessment,
+                    co,
+                    repeated_pairs,
+                    clubbing_map,
+                    best_n_map,
+                    co_weights
+                )
+
+                if pd.notna(score):
+                    assessment_scores.append(score)
+
+            row[co] = (
+                float(np.mean(assessment_scores))
+                if assessment_scores
+                else np.nan
+            )
+
+        output_rows.append(row)
+
+    output = pd.DataFrame(output_rows)
+
+    ordered = (
+        ["Course Name", "Course Code"]
+        + ASSESSMENT_ORDER
+        + CO_LIST
+    )
+
+    for col in ordered:
+
+        if col not in output.columns:
+            output[col] = np.nan
+
+    return output[ordered].replace(
+        {None: np.nan}
+    )
+
+
+# ==========================================================
+# 11. CREATE EXCEL FILE
+# ==========================================================
+
+def create_excel_file(export_data):
+
+    buffer = BytesIO()
 
     with pd.ExcelWriter(
-        output,
+        buffer,
         engine="openpyxl"
     ) as writer:
 
-        for sheet_name, df in sheets.items():
+        export_data.to_excel(
+            writer,
+            index=False,
+            sheet_name="CO Assessment"
+        )
 
-            sheet = sheet_name[:31]
+        ws = writer.sheets["CO Assessment"]
 
-            df.to_excel(
-                writer,
-                sheet_name=sheet,
-                index=False
+        fill = PatternFill(
+            start_color="185C37",
+            end_color="185C37",
+            fill_type="solid"
+        )
+
+        font = Font(
+            color="FFFFFF",
+            bold=True
+        )
+
+        for cell in ws[1]:
+
+            cell.fill = fill
+            cell.font = font
+
+            cell.alignment = Alignment(
+                horizontal="center",
+                vertical="center"
             )
 
-            ws = writer.sheets[sheet]
+        for cells in ws.columns:
 
-            ws.freeze_panes = "A2"
-            ws.auto_filter.ref = ws.dimensions
+            letter = get_column_letter(
+                cells[0].column
+            )
 
-            for column in ws.columns:
+            width = max(
+                (
+                    len(str(c.value))
+                    for c in cells
+                    if c.value is not None
+                ),
+                default=10
+            )
 
-                max_length = max(
-                    len(str(cell.value or ""))
-                    for cell in column
-                )
+            ws.column_dimensions[letter].width = min(
+                width + 3,
+                28
+            )
 
-                ws.column_dimensions[
-                    column[0].column_letter
-                ].width = min(max_length + 3, 30)
+        for row in ws.iter_rows(min_row=2):
 
-    output.seek(0)
+            for cell in row:
 
-    return output.getvalue()
+                if isinstance(cell.value, (int, float)):
+                    cell.number_format = "0.00"
 
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
+        ws.row_dimensions[1].height = 28
 
-# ============================================================
-# 8. PDF EXPORT
-# ============================================================
+    buffer.seek(0)
 
-def create_pdf(matrix, department, course, course_code):
-
-    output = io.BytesIO()
-
-    styles = getSampleStyleSheet()
-
-    document = SimpleDocTemplate(
-        output,
-        pagesize=landscape(A4),
-        leftMargin=25,
-        rightMargin=25,
-        topMargin=25,
-        bottomMargin=25
-    )
-
-    rows = [
-        [str(col) for col in matrix.columns]
-    ] + matrix.fillna("").astype(str).values.tolist()
-
-    table = Table(
-        rows,
-        repeatRows=1
-    )
-
-    table.setStyle(
-        TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#183D32")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-            ("FONTSIZE", (0, 0), (-1, -1), 7),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE")
-        ])
-    )
-
-    story = [
-        Paragraph("FINAL CCA MATRIX", styles["Title"]),
-        Spacer(1, 10),
-        Paragraph(f"Department: {department}", styles["Normal"]),
-        Paragraph(f"Course: {course}", styles["Normal"]),
-        Paragraph(f"Course Code: {course_code}", styles["Normal"]),
-        Spacer(1, 15),
-        table
-    ]
-
-    document.build(story)
-
-    output.seek(0)
-
-    return output.getvalue()
+    return buffer.getvalue()
 
 
-# ============================================================
-# 9. STEP 1 – UPLOAD DATA
-# ============================================================
+# ==========================================================
+# 12. DASHBOARD
+# ==========================================================
 
-st.header("Step 1 – Upload Assessment Data")
+st.title("📊 CO Assessment Dashboard")
 
-source = st.radio(
-    "Select Data Source",
-    ["Upload Phase 1 File", "Use Sample Data"],
-    horizontal=True
+st.markdown(
+    "Upload assessment data, replace ND assessments, "
+    "select rescaling and clubbing methods, and generate "
+    "the final CO assessment matrix."
 )
-
-if source == "Upload Phase 1 File":
-
-    uploaded_file = st.file_uploader(
-        "Upload Excel or CSV file",
-        type=["xlsx", "xls", "csv"]
-    )
-
-    if uploaded_file is None:
-
-        st.info("Please upload your Phase 1 marks file.")
-
-        st.stop()
-
-    try:
-
-        if uploaded_file.name.lower().endswith(".csv"):
-            raw_data = pd.read_csv(uploaded_file)
-
-        else:
-            raw_data = pd.read_excel(uploaded_file)
-
-        data = clean_data(raw_data)
-
-    except Exception as error:
-
-        st.error(f"File error: {error}")
-
-        st.stop()
-
-else:
-
-    data = clean_data(sample_data())
-
-
-# ============================================================
-# 10. STEP 2 – COURSE DETAILS
-# ============================================================
 
 st.divider()
 
-st.header("Step 2 – Course Details")
 
-first = data.iloc[0]
+# ==========================================================
+# 13. UPLOAD DATA
+# ==========================================================
 
-c1, c2, c3 = st.columns(3)
+st.subheader("01 | Upload Assessment Data")
 
-department = c1.text_input(
-    "Department",
-    "Mathematics"
+uploaded_file = st.file_uploader(
+    "Upload your Excel or CSV file",
+    type=["xlsx", "xls", "csv"]
 )
 
-course = c2.text_input(
-    "Course Name",
-    first["Course Name"]
-)
+if uploaded_file is None:
 
-course_code = c3.text_input(
-    "Course Code",
-    first["Course Code"]
-)
+    st.info("Upload your assessment dataset to begin.")
 
-c1, c2 = st.columns(2)
+    st.stop()
 
-c1.metric(
-    "Total Students",
-    data["Reg No"].nunique()
-)
+try:
 
-c2.metric(
-    "Total Records",
-    len(data)
-)
+    raw_data = read_uploaded_file(uploaded_file)
 
+    df, identity_columns = prepare_data(raw_data)
 
-# ============================================================
-# 11. STEP 3 – ND REPLACEMENT
-# ============================================================
+except Exception as exc:
 
-st.divider()
-
-st.header("Step 3 – ND Assessment Replacement")
-
-st.write(
-    "Select a replacement assessment for ND, if required. "
-    "If no replacement is needed, leave ND selected."
-)
-
-course_details = (
-    data[
-        ["Course Code", "Course Name", "Course Type"]
-    ]
-    .drop_duplicates(subset=["Course Code"])
-    .reset_index(drop=True)
-)
-
-course_details["Replace ND"] = "ND"
-
-if st.session_state.nd_confirmed:
-
-    edited_nd = st.session_state["nd_mapping"]
-
-    st.dataframe(
-        edited_nd,
-        use_container_width=True,
-        hide_index=True
-    )
-
-else:
-
-    edited_nd = st.data_editor(
-        course_details,
-        use_container_width=True,
-        hide_index=True,
-
-        disabled=[
-            "Course Code",
-            "Course Name",
-            "Course Type"
-        ],
-
-        column_config={
-
-            "Replace ND":
-                st.column_config.SelectboxColumn(
-                    "Replace ND",
-                    options=ND_REPLACEMENT_OPTIONS,
-                    required=True
-                )
-        },
-
-        key="nd_editor"
-    )
-
-st.info(
-    "Please review the ND replacement table. "
-    "ND will remain unchanged for any course where you do not select "
-    "another assessment."
-)
-
-if not st.session_state.nd_confirmed:
-
-    if st.button(
-        "Confirm ND Replacement and Continue",
-        type="primary",
-        use_container_width=True
-    ):
-
-        st.session_state["nd_mapping"] = edited_nd.copy()
-
-        st.session_state["nd_confirmed"] = True
-
-        st.session_state["generated"] = False
-
-        st.session_state["finalized"] = False
-
-        st.success("ND replacement confirmed.")
-
-        st.rerun()
-
-
-# ============================================================
-# 12. APPLY ND REPLACEMENT
-# ============================================================
-
-if not st.session_state.nd_confirmed:
-
-    st.warning(
-        "Complete Step 3 and confirm the ND selection to proceed to Step 4."
+    st.error(
+        f"Unable to prepare the uploaded data: {exc}"
     )
 
     st.stop()
 
-nd_mapping = dict(
-    zip(
-        st.session_state["nd_mapping"]["Course Code"],
-        st.session_state["nd_mapping"]["Replace ND"]
-    )
+st.success(
+    "Dataset uploaded and checked successfully."
 )
 
-data["Assessment"] = data.apply(
+st.divider()
 
-    lambda row: (
-        nd_mapping.get(row["Course Code"], "ND")
-        if row["Assessment"] == "ND"
-        else row["Assessment"]
+
+# ==========================================================
+# 14. COURSE SELECTION
+# ==========================================================
+
+st.subheader("02 | Course Selection")
+
+course_lookup = (
+    df[
+        ["Course Name", "Course Code", "Course Type"]
+    ]
+    .drop_duplicates()
+    .copy()
+)
+
+course_lookup["_label"] = course_lookup.apply(
+    lambda r: (
+        f"{r['Course Name']} | "
+        f"{r['Course Code']} | "
+        f"{r['Course Type']}"
     ),
-
     axis=1
 )
 
+selected_label = st.selectbox(
+    "Select Course",
+    course_lookup["_label"].tolist()
+)
 
-# ============================================================
-# 13. STEP 4 – STUDENT-WISE MARKS
-# ============================================================
+selected = course_lookup.loc[
+    course_lookup["_label"] == selected_label
+].iloc[0]
+
+course_name = selected["Course Name"]
+course_code = selected["Course Code"]
+course_type = selected["Course Type"]
+
+col1, col2 = st.columns(2)
+
+col1.markdown(
+    f"**Course Type:** {course_type}"
+)
+
+col2.markdown(
+    f"**Course Code:** {course_code}"
+)
+
+course_data = df[
+    (df["Course Name"] == course_name)
+    & (df["Course Code"] == course_code)
+    & (df["Course Type"] == course_type)
+].copy().reset_index(drop=True)
 
 st.divider()
 
-st.header("Step 4 – Assessment Generation")
 
-st.subheader("Table 1 – Student-wise Assessment Marks")
+# ==========================================================
+# 15. ND REPLACEMENT
+# ==========================================================
 
-student_columns = [
-    "Student Name",
-    "Reg No",
-    "Admission No",
-    "Course Name",
-    "Course Code",
-    "Course Type",
-    "Assessment",
-    "Assessment ID",
-    "Date",
-    "CO",
-    "Mark Obtained",
-    "Max Marks"
-]
+st.subheader("03 | ND Replacement")
 
-student_marks = data[student_columns].copy()
+nd_config = build_nd_replacement_table(course_data)
 
-student_marks = student_marks.sort_values(
-    [
-        "Student Name",
-        "Assessment",
-        "Assessment ID",
-        "CO"
-    ]
-)
+nd_replacement_signature = []
 
-st.dataframe(
-    student_marks,
-    use_container_width=True,
-    hide_index=True
-)
+if not nd_config.empty:
 
-
-# ============================================================
-# 14. CREATE COMBINED CONFIGURATION
-# ============================================================
-
-st.divider()
-
-st.subheader("Table 2 – Combined Assessment Configuration")
-
-st.caption(
-    "Configure the rescaling method and CO calculation method "
-    "in one table."
-)
-
-combined_config = (
-    data[
-        [
-            "Assessment",
-            "Assessment ID",
-            "Date",
-            "CO"
-        ]
-    ]
-    .drop_duplicates()
-    .sort_values(
-        ["Assessment", "Assessment ID", "Date", "CO"]
+    st.caption(
+        "Select the replacement assessment for every ND record. "
+        "The original CO is retained automatically."
     )
-    .reset_index(drop=True)
-)
 
-combined_config["Rescaling Method"] = "Absolute"
+    st.markdown("### Available ND Assessments")
 
-combined_config["CO Calculation Method"] = "Average of All"
-
-combined_config["Best N"] = None
-
-combined_config["Weight"] = None
-
-# Used only when Rescaling Method is Moderation.
-# Enter the minimum pass percentage out of 100.
-combined_config["Minimum Pass Mark"] = None
-
-
-# ============================================================
-# 15. COMBINED CONFIGURATION TABLE EDITOR
-# ============================================================
-
-if not st.session_state.finalized:
-
-    column_config = {
-
-        "Assessment":
-            st.column_config.TextColumn(
-                "Assessment",
-                disabled=True
-            ),
-
-        "Assessment ID":
-            st.column_config.TextColumn(
-                "Assessment ID",
-                disabled=True
-            ),
-
-        "Date":
-            st.column_config.DateColumn(
-                "Date",
-                disabled=True
-            ),
-
-        "CO":
-            st.column_config.TextColumn(
-                "CO",
-                disabled=True
-            ),
-
-        "Rescaling Method":
-            st.column_config.SelectboxColumn(
-                "Rescaling Method",
-                options=RESCALING_OPTIONS,
-                required=True
-            ),
-
-        "CO Calculation Method":
-            st.column_config.SelectboxColumn(
-                "CO Calculation Method",
-                options=CLUBBING_OPTIONS,
-                required=True
-            ),
-
-        "Best N":
-            st.column_config.NumberColumn(
-                "Best N",
-                min_value=1,
-                step=1,
-                format="%d"
-            ),
-
-        "Weight":
-            st.column_config.NumberColumn(
-                "Weight",
-                min_value=0.0,
-                step=0.5,
-                format="%.2f"
-            ),
-
-        "Minimum Pass Mark":
-            st.column_config.NumberColumn(
-                "Minimum Pass Mark (%)",
-                help="For Moderation only. Enter the pass percentage out of 100.",
-                min_value=0.0,
-                max_value=100.0,
-                step=1.0,
-                format="%.2f"
-            )
-    }
-
-    edited_config = st.data_editor(
-        combined_config,
+    edited_nd_config = st.data_editor(
+        nd_config,
         use_container_width=True,
         hide_index=True,
-
         disabled=[
-            "Assessment",
-            "Assessment ID",
+            "Record Index",
             "Date",
-            "CO"
+            "ND CO",
+            "Mark Obtained"
         ],
+        column_config={
+            "Record Index": None,
+            "Replace With": st.column_config.SelectboxColumn(
+                "Replace Assessment",
+                options=ND_REPLACEMENT_OPTIONS,
+                required=True
+            )
+        },
+        key=f"nd_replacement_{safe_key(course_code)}"
+    )
 
-        column_config=column_config,
+    nd_replacement_signature = (
+        edited_nd_config[
+            ["Record Index", "Replace With"]
+        ].to_dict("records")
+    )
 
-        key="combined_config_editor"
+    not_replaced = edited_nd_config[
+        edited_nd_config["Replace With"] == "Do not change"
+    ]
+
+    if not_replaced.shape[0] > 0:
+
+        st.warning(
+            f"{len(not_replaced)} ND record(s) are still not replaced. "
+            "Complete every ND replacement to continue."
+        )
+
+        st.stop()
+
+    course_data = apply_nd_replacements(
+        course_data,
+        edited_nd_config
+    )
+
+    st.success(
+        "All ND records have been replaced successfully."
     )
 
 else:
 
-    edited_config = st.session_state["edited_config"]
+    st.info("No ND records were found for this course.")
 
-    st.dataframe(
-        edited_config,
-        use_container_width=True,
-        hide_index=True
+course_data = course_data[
+    course_data["Assessment"].isin(ASSESSMENT_ORDER)
+].copy()
+
+if course_data.empty:
+
+    st.warning(
+        "No PA1, PA2, LE or LM records are available "
+        "for calculation."
     )
 
-
-st.info(
-    "Absolute: Mark Obtained / Max Marks × 100. "
-    "Relative: Mark Obtained / Class Average × 100. "
-    "Moderation: If a student's percentage is below the entered "
-    "Minimum Pass Mark, it is raised to that minimum. "
-    "Enter Minimum Pass Mark only for Moderation rows. "
-    "Average of All: averages all Assessment IDs. "
-    "Average of Best: enter Best N. "
-    "Weighted Average: enter a separate weight for each Assessment ID. "
-    "Keep Best N and Weight blank when they are not required."
-)
-# ============================================================
-# 16. CONFIGURATION VALIDATION
-# ============================================================
-
-def validate_combined_config(config):
-
-    required_columns = [
-        "Rescaling Method",
-        "CO Calculation Method",
-        "Best N",
-        "Weight",
-        "Minimum Pass Mark"
-    ]
-
-    for col in required_columns:
-
-        if col not in config.columns:
-
-            raise ValueError(
-                f"Missing configuration column: {col}"
-            )
-
-    if config["Rescaling Method"].isna().any():
-
-        raise ValueError(
-            "Select a rescaling method for every row."
-        )
-
-    if config["CO Calculation Method"].isna().any():
-
-        raise ValueError(
-            "Select a CO calculation method for every row."
-        )
-
-    # Validate Minimum Pass Mark for Moderation rows.
-
-    moderation_rows = config[
-        config["Rescaling Method"] == "Moderation"
-    ]
-
-    if not moderation_rows.empty:
-
-        moderation_values = pd.to_numeric(
-            moderation_rows["Minimum Pass Mark"],
-            errors="coerce"
-        )
-
-        if moderation_values.isna().any():
-
-            raise ValueError(
-                "Enter a Minimum Pass Mark for every Moderation row."
-            )
-
-        if (
-            (moderation_values < 0)
-            | (moderation_values > 100)
-        ).any():
-
-            raise ValueError(
-                "Minimum Pass Mark must be between 0 and 100."
-            )
-
-    for (assessment, co), group in config.groupby(
-        ["Assessment", "CO"]
-    ):
-
-        methods = (
-            group["CO Calculation Method"]
-            .dropna()
-            .unique()
-        )
-
-        if len(methods) != 1:
-
-            raise ValueError(
-                f"Select the same CO Calculation Method for "
-                f"all Assessment IDs of {assessment} – {co}."
-            )
-
-        method = methods[0]
-
-        if method == "Average of Best":
-
-            best_values = pd.to_numeric(
-                group["Best N"],
-                errors="coerce"
-            ).dropna().unique()
-
-            if len(best_values) == 0:
-
-                raise ValueError(
-                    f"Enter Best N for {assessment} – {co}."
-                )
-
-            if len(best_values) > 1:
-
-                raise ValueError(
-                    f"Use the same Best N for all Assessment IDs "
-                    f"of {assessment} – {co}."
-                )
-
-        elif method == "Weighted Average":
-
-            weights = pd.to_numeric(
-                group["Weight"],
-                errors="coerce"
-            )
-
-            if weights.isna().any():
-
-                raise ValueError(
-                    f"Enter a weight for every Assessment ID "
-                    f"of {assessment} – {co}."
-                )
-
-            if (weights <= 0).any():
-
-                raise ValueError(
-                    f"Weights must be positive for {assessment} – {co}."
-                )
-
-    return True
-
-
-# ============================================================
-# 17. RESCALING CALCULATION
-# ============================================================
-
-def calculate_rescaling(data, settings):
-
-    result = data.copy()
-
-    rescaling_settings = settings[
-        [
-            "Assessment",
-            "Assessment ID",
-            "Date",
-            "CO",
-            "Rescaling Method",
-            "Minimum Pass Mark"
-        ]
-    ].copy()
-
-    result = result.merge(
-        rescaling_settings,
-        on=[
-            "Assessment",
-            "Assessment ID",
-            "Date",
-            "CO"
-        ],
-        how="left"
-    )
-
-    if result["Rescaling Method"].isna().any():
-
-        raise ValueError(
-            "Rescaling method is missing for some records."
-        )
-
-    result["Class Average"] = (
-        result.groupby(
-            [
-                "Assessment",
-                "Assessment ID",
-                "Date",
-                "CO"
-            ]
-        )["Mark Obtained"].transform("mean")
-    )
-
-    result["Rescaled Value"] = 0.0
-
-    for index, row in result.iterrows():
-
-        obtained = float(row["Mark Obtained"])
-
-        maximum = float(row["Max Marks"])
-
-        if maximum <= 0:
-            continue
-
-        # ABSOLUTE RESCALING
-
-        if row["Rescaling Method"] == "Absolute":
-
-            value = obtained / maximum * 100
-
-        # RELATIVE RESCALING
-
-        elif row["Rescaling Method"] == "Relative":
-
-            average = float(row["Class Average"])
-
-            if average > 0:
-
-                value = obtained / average * 100
-
-            else:
-
-                value = 0
-
-        # MODERATION RESCALING
-
-        elif row["Rescaling Method"] == "Moderation":
-
-            # First calculate the absolute percentage.
-
-            value = obtained / maximum * 100
-
-            # Read the minimum pass percentage.
-
-            minimum_pass = float(
-                row["Minimum Pass Mark"]
-            )
-
-            # Raise the mark to the minimum pass mark
-            # only when the student scores below it.
-
-            if value < minimum_pass:
-
-                value = minimum_pass
-
-        else:
-
-            raise ValueError(
-                "Invalid rescaling method selected."
-            )
-
-        # Keep the final value between 0 and 100.
-
-        result.loc[index, "Rescaled Value"] = min(
-            max(value, 0),
-            100
-        )
-
-    result["Rescaled Value"] = (
-        result["Rescaled Value"].round(2)
-    )
-
-    return result
-
-
-# ============================================================
-# 18. CO-WISE CLUBBING
-# ============================================================
-
-def calculate_clubbing(rescaled, config):
-
-    student_columns = [
-        "Reg No",
-        "Admission No",
-        "Student Name"
-    ]
-
-    results = []
-
-    grouped = rescaled.groupby(
-        student_columns + ["Assessment", "CO"],
-        dropna=False
-    )
-
-    for group_key, group in grouped:
-
-        reg = group_key[0]
-        admission = group_key[1]
-        name = group_key[2]
-        assessment = group_key[3]
-        co = group_key[4]
-
-        setting = config[
-            (config["Assessment"] == assessment)
-            & (config["CO"] == co)
-        ]
-
-        if setting.empty:
-
-            raise ValueError(
-                f"Configuration missing for {assessment} – {co}."
-            )
-
-        methods = (
-            setting["CO Calculation Method"]
-            .dropna()
-            .unique()
-        )
-
-        if len(methods) != 1:
-
-            raise ValueError(
-                f"Use the same CO Calculation Method for "
-                f"all Assessment IDs of {assessment} – {co}."
-            )
-
-        method = methods[0]
-
-        # Calculate the average for each Assessment ID first.
-
-        id_values = (
-            group.groupby("Assessment ID")["Rescaled Value"]
-            .mean()
-            .reset_index()
-        )
-
-        if method == "Average of All":
-
-            final_value = id_values["Rescaled Value"].mean()
-
-        elif method == "Average of Best":
-
-            best_values = pd.to_numeric(
-                setting["Best N"],
-                errors="coerce"
-            ).dropna().unique()
-
-            if len(best_values) != 1:
-
-                raise ValueError(
-                    f"Enter one common Best N for {assessment} – {co}."
-                )
-
-            best_n = int(best_values[0])
-
-            if best_n < 1 or best_n > len(id_values):
-
-                raise ValueError(
-                    f"Best N for {assessment} – {co} must be between "
-                    f"1 and {len(id_values)}."
-                )
-
-            final_value = (
-                id_values["Rescaled Value"]
-                .nlargest(best_n)
-                .mean()
-            )
-
-        else:
-
-            weighted_total = 0.0
-            total_weight = 0.0
-
-            for _, id_row in id_values.iterrows():
-
-                assessment_id = id_row["Assessment ID"]
-
-                matching_setting = setting[
-                    setting["Assessment ID"] == assessment_id
-                ]
-
-                if matching_setting.empty:
-
-                    raise ValueError(
-                        f"Weight setting missing for {assessment} – "
-                        f"{co} – {assessment_id}."
-                    )
-
-                weights = pd.to_numeric(
-                    matching_setting["Weight"],
-                    errors="coerce"
-                ).dropna().unique()
-
-                if len(weights) != 1 or weights[0] <= 0:
-
-                    raise ValueError(
-                        f"Enter one positive weight for "
-                        f"{assessment} – {co} – {assessment_id}."
-                    )
-
-                weight = float(weights[0])
-
-                weighted_total += (
-                    float(id_row["Rescaled Value"]) * weight
-                )
-
-                total_weight += weight
-
-            if total_weight <= 0:
-
-                raise ValueError(
-                    f"Total weight cannot be zero for {assessment} – {co}."
-                )
-
-            final_value = weighted_total / total_weight
-
-        results.append({
-
-            "Reg No": reg,
-
-            "Admission No": admission,
-
-            "Student Name": name,
-
-            "Assessment": assessment,
-
-            "CO": co,
-
-            "CO Calculation Method": method,
-
-            "Number of Assessment IDs": len(id_values),
-
-            "Clubbing Value": round(final_value, 2)
-
-        })
-
-    return pd.DataFrame(results)
-
-# ============================================================
-# 19. GENERATE RESULTS
-# ============================================================
+    st.stop()
 
 st.divider()
 
-if not st.session_state.finalized:
 
-    if st.button(
-        "Generate CCA Results",
-        type="primary",
-        use_container_width=True
-    ):
+# ==========================================================
+# 16. RESCALING AND CO CALCULATION SETTINGS
+# ==========================================================
+
+st.subheader(
+    "04 | Rescaling and CO Calculation Settings"
+)
+
+st.caption(
+    "Rescaling is selected separately for each assessment, date and CO. "
+    "Clubbing is shown only when the same CO occurs on different dates "
+    "within the same assessment. One clubbing selection applies to all "
+    "those dates."
+)
+
+settings_frame = get_settings_rows(course_data)
+
+if settings_frame.empty:
+
+    st.warning(
+        "No assessment and CO combinations are available."
+    )
+
+    st.stop()
+
+
+# ----------------------------------------------------------
+# REPEATED CO DETECTION
+# ----------------------------------------------------------
+
+repeated_summary = get_repeated_co_summary(course_data)
+
+repeated_pairs = set(repeated_summary.keys())
+
+repeated_pair_dates = {}
+
+for assessment, co in repeated_pairs:
+
+    pair_rows = settings_frame[
+        (settings_frame["Assessment"] == assessment)
+        & (settings_frame["CO"] == co)
+    ]
+
+    repeated_pair_dates[
+        (assessment, co)
+    ] = pair_rows["Date Label"].tolist()
+
+
+# ----------------------------------------------------------
+# SETTINGS DICTIONARIES
+# ----------------------------------------------------------
+
+config_map = {}
+clubbing_map = {}
+best_n_map = {}
+co_weights = {}
+
+shown_clubbing = set()
+
+
+# ----------------------------------------------------------
+# TABLE HEADER
+# ----------------------------------------------------------
+
+header_cols = st.columns(
+    [0.85, 1.15, 0.55, 1.15, 1.55, 2.4]
+)
+
+header_cols[0].markdown("**Assessment**")
+header_cols[1].markdown("**Date**")
+header_cols[2].markdown("**CO**")
+header_cols[3].markdown("**Rescaling**")
+
+st.markdown("<hr>", unsafe_allow_html=True)
+
+
+# ----------------------------------------------------------
+# SETTINGS ROWS
+# ----------------------------------------------------------
+
+for _, setting_row in settings_frame.iterrows():
+
+    assessment = setting_row["Assessment"]
+    dlabel = setting_row["Date Label"]
+    co = setting_row["CO"]
+
+    combination = (assessment, co)
+
+    row_key = safe_key(
+        f"{course_code}_{assessment}_{dlabel}_{co}"
+    )
+
+    cols = st.columns(
+        [0.85, 1.15, 0.55, 1.15, 1.55, 2.4]
+    )
+
+    cols[0].write(assessment)
+    cols[1].write(dlabel)
+    cols[2].write(co)
+
+    # ------------------------------------------------------
+    # RESCALING METHOD
+    # ------------------------------------------------------
+
+    rescaling = cols[3].selectbox(
+        "Rescaling",
+        RESCALING_OPTIONS,
+        index=0,
+        key=f"rescale_{row_key}",
+        label_visibility="collapsed"
+    )
+
+    minimum_mark = 0.0
+
+    # ------------------------------------------------------
+    # MODERATE MINIMUM MARK
+    # Appears only when Moderate is selected.
+    # ------------------------------------------------------
+
+    if rescaling == "Moderate":
+
+        minimum_mark = cols[4].number_input(
+            "Minimum Mark",
+            min_value=0.0,
+            value=0.0,
+            step=0.5,
+            key=f"minimum_mark_{row_key}",
+            help=(
+                "Marks below this value will be replaced "
+                "by this minimum mark for Moderate rescaling."
+            )
+        )
+
+    config_map[
+        (assessment, dlabel, co)
+    ] = {
+        "Rescaling Method": rescaling,
+        "Minimum Mark": float(minimum_mark)
+    }
+
+    # ------------------------------------------------------
+    # CLUBBING ONLY FOR REPEATED ASSESSMENT + CO
+    # ------------------------------------------------------
+
+    if combination in repeated_pairs:
+
+        # Only one dropdown is displayed for this pair.
+        # It applies to all dates for this Assessment + CO.
+
+        if combination not in shown_clubbing:
+
+            pair_dates = repeated_pair_dates[combination]
+
+            pair_key = safe_key(
+                f"{course_code}_{assessment}_{co}_"
+                + "_".join(pair_dates)
+            )
+
+            clubbing = cols[4].selectbox(
+                "Clubbing",
+                CLUBBING_OPTIONS,
+                index=None,
+                placeholder="Select clubbing method",
+                key=f"clubbing_{pair_key}",
+                label_visibility="collapsed"
+            )
+
+            clubbing_map[combination] = clubbing
+
+            shown_clubbing.add(combination)
+
+            # ----------------------------------------------
+            # AVERAGE OF BEST
+            # ----------------------------------------------
+
+            if clubbing == "Average of Best":
+
+                best_n = cols[5].number_input(
+                    "Best N",
+                    min_value=1,
+                    max_value=len(pair_dates),
+                    value=1,
+                    step=1,
+                    key=f"best_n_{pair_key}",
+                    label_visibility="collapsed",
+                    help=(
+                        f"Choose how many of the best "
+                        f"{len(pair_dates)} date entries "
+                        "should be averaged."
+                    )
+                )
+
+                best_n_map[combination] = int(best_n)
+
+            # ----------------------------------------------
+            # WEIGHTED AVERAGE
+            # ----------------------------------------------
+
+            elif clubbing == "Weighted Average":
+
+                with cols[5]:
+
+                    weight_cols = st.columns(
+                        len(pair_dates)
+                    )
+
+                    for i, entry_date in enumerate(pair_dates):
+
+                        entry_label = f"Entry {i + 1}"
+
+                        with weight_cols[i]:
+
+                            st.caption(entry_label)
+
+                            weight = st.number_input(
+                                "Weight",
+                                min_value=0.0,
+                                max_value=100.0,
+                                value=1.0,
+                                step=1.0,
+                                key=f"weight_{pair_key}_{i}",
+                                label_visibility="collapsed",
+                                help=(
+                                    f"Weight for {co} on "
+                                    f"{entry_date}"
+                                )
+                            )
+
+                        co_weights[
+                            (assessment, co, entry_date)
+                        ] = weight
+
+    # No clubbing dropdown for non-repeated CO combinations.
+    # No duplicate dropdown for subsequent dates of the same pair.
+
+    st.markdown("<hr>", unsafe_allow_html=True)
+
+
+# ==========================================================
+# 17. VALIDATE CLUBBING AND WEIGHTS
+# ==========================================================
+
+missing_clubbing = []
+invalid_best_n = []
+invalid_weights = []
+
+for assessment, co in repeated_pairs:
+
+    combination = (assessment, co)
+
+    method = clubbing_map.get(combination)
+
+    if method is None:
+
+        missing_clubbing.append(
+            f"{assessment} - {co}"
+        )
+
+    elif method == "Average of Best":
+
+        best_n = best_n_map.get(combination, 0)
+
+        maximum = len(
+            repeated_pair_dates[combination]
+        )
+
+        if best_n < 1 or best_n > maximum:
+
+            invalid_best_n.append(
+                f"{assessment} - {co}"
+            )
+
+    elif method == "Weighted Average":
+
+        pair_dates = repeated_pair_dates[combination]
+
+        total_weight = sum(
+            co_weights.get(
+                (assessment, co, dlabel),
+                0.0
+            )
+            for dlabel in pair_dates
+        )
+
+        if total_weight <= 0:
+
+            invalid_weights.append(
+                f"{assessment} - {co}"
+            )
+
+
+# ==========================================================
+# 18. GENERATE ASSESSMENT TABLE
+# ==========================================================
+
+st.divider()
+
+st.subheader("05 | Generate Assessment Table")
+
+
+# ----------------------------------------------------------
+# SETTINGS SIGNATURE
+# ----------------------------------------------------------
+
+settings_signature = [
+    {
+        "key": list(k),
+        **v
+    }
+    for k, v in config_map.items()
+]
+
+signature = json.dumps(
+    {
+        "course": selected_label,
+        "settings": settings_signature,
+        "clubbing": {
+            str(k): v for k, v in clubbing_map.items()
+        },
+        "best_n": {
+            str(k): v for k, v in best_n_map.items()
+        },
+        "weights": {
+            str(k): v for k, v in co_weights.items()
+        },
+        "nd_choices": nd_replacement_signature
+    },
+    sort_keys=True,
+    default=str
+)
+
+if (
+    st.session_state.get("generated_signature")
+    != signature
+):
+
+    st.session_state.pop("generated_table", None)
+    st.session_state.pop("generated_excel", None)
+    st.session_state.pop("generated_signature", None)
+
+
+# ----------------------------------------------------------
+# GENERATE BUTTON
+# ----------------------------------------------------------
+
+if st.button(
+    "Generate Assessment Table",
+    type="primary",
+    use_container_width=True
+):
+
+    if missing_clubbing:
+
+        st.error(
+            "Select a clubbing method for these repeated "
+            "assessment-CO combinations: "
+            + ", ".join(missing_clubbing)
+        )
+
+    elif invalid_best_n:
+
+        st.error(
+            "Check Best N for: "
+            + ", ".join(invalid_best_n)
+        )
+
+    elif invalid_weights:
+
+        st.error(
+            "The total weight must be greater than zero for: "
+            + ", ".join(invalid_weights)
+        )
+
+    else:
 
         try:
 
-            validate_combined_config(edited_config)
+            with st.spinner(
+                "Calculating rescaled assessment values and CO scores..."
+            ):
 
-            rescaled = calculate_rescaling(
-                data,
-                edited_config
+                results = calculate_results(
+                    course_data,
+                    identity_columns,
+                    config_map
+                )
+
+                if results.empty:
+
+                    st.error(
+                        "No calculation results were produced."
+                    )
+
+                    st.stop()
+
+                output = make_output_table(
+                    results,
+                    identity_columns,
+                    repeated_pairs,
+                    clubbing_map,
+                    best_n_map,
+                    co_weights
+                )
+
+                st.session_state["generated_table"] = output
+
+                st.session_state["generated_excel"] = (
+                    create_excel_file(output)
+                )
+
+                st.session_state["generated_signature"] = signature
+
+                st.success(
+                    "Assessment table generated successfully."
+                )
+
+        except Exception as exc:
+
+            st.error(
+                f"Calculation error: {exc}"
             )
 
-            clubbed = calculate_clubbing(
-                rescaled,
-                edited_config
-            )
 
-            generated = rescaled.merge(
+# ==========================================================
+# 19. PREVIEW AND DOWNLOAD
+# ==========================================================
 
-                clubbed[
-                    [
-                        "Reg No",
-                        "Admission No",
-                        "Student Name",
-                        "Assessment",
-                        "CO",
-                        "Clubbing Value"
-                    ]
-                ],
-
-                on=[
-                    "Reg No",
-                    "Admission No",
-                    "Student Name",
-                    "Assessment",
-                    "CO"
-                ],
-
-                how="left"
-            )
-
-            st.session_state["rescaled_results"] = rescaled
-
-            st.session_state["clubbed_results"] = clubbed
-
-            st.session_state["generation_results"] = generated
-
-            st.session_state["edited_config"] = edited_config.copy()
-
-            st.session_state["generated"] = True
-
-            st.success("CCA results generated successfully!")
-
-            st.rerun()
-
-        except Exception as error:
-
-            st.error(str(error))
-
-
-# ============================================================
-# 20. STEP 5 – GENERATED STUDENT-WISE RESULTS
-# ============================================================
-
-if st.session_state.generated:
+if (
+    "generated_table" in st.session_state
+    and st.session_state.get("generated_signature") == signature
+):
 
     st.divider()
 
-    st.header("Step 5 – Generated Results")
+    st.subheader("06 | Generated Assessment Matrix")
 
-    generated_results = st.session_state["generation_results"]
+    st.caption(
+        "PA1, PA2, LE and LM contain assessment-wise values. "
+        "CO1, CO2, CO3 and CO4 contain the corresponding CO-wise "
+        "averages. Student names and identifiers are not displayed."
+    )
 
-    display_columns = [
-        "Student Name",
-        "Reg No",
-        "Admission No",
-        "Assessment",
-        "Assessment ID",
-        "Date",
-        "CO",
-        "Mark Obtained",
-        "Max Marks",
-        "Rescaled Value",
-        "Clubbing Value"
-    ]
-
-    student_results = generated_results[
-        display_columns
+    display_table = st.session_state[
+        "generated_table"
     ].copy()
 
-    student_results = student_results.sort_values(
-        [
-            "Student Name",
-            "Assessment",
-            "Assessment ID",
-            "CO"
-        ]
-    )
-
     st.dataframe(
-        student_results,
+        display_table,
         use_container_width=True,
         hide_index=True
     )
 
-    st.subheader("Download Generated Results")
-
-    excel_data = create_excel({
-
-        "Student Wise Results": student_results,
-
-        "Combined Configuration": st.session_state["edited_config"],
-
-        "Rescaled Results": st.session_state["rescaled_results"],
-
-        "Clubbing Results": st.session_state["clubbed_results"]
-
-    })
-
     st.download_button(
-        "Download Generated Results (Excel)",
-        data=excel_data,
-        file_name="CCA_Generation_Results.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "📥 Download Excel File",
+        data=st.session_state["generated_excel"],
+        file_name="CO_Assessment_Output.xlsx",
+        mime=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
         use_container_width=True
     )
-
-
-# ============================================================
-# 21. STEP 6 – FINALIZE CCA
-# ============================================================
-
-if st.session_state.generated and not st.session_state.finalized:
-
-    st.divider()
-
-    st.header("Step 6 – Finalize CCA")
-
-    st.warning(
-        "Finalizing will lock the generation settings."
-    )
-
-    if st.button(
-        "Finalize CCA",
-        type="primary",
-        use_container_width=True
-    ):
-
-        clubbed = st.session_state["clubbed_results"]
-
-        matrix = clubbed.pivot_table(
-
-            index=[
-                "Reg No",
-                "Admission No",
-                "Student Name"
-            ],
-
-            columns="CO",
-
-            values="Clubbing Value",
-
-            aggfunc="mean"
-        )
-
-        matrix.columns = [
-            f"{co} Final Mark"
-            for co in matrix.columns
-        ]
-
-        co_columns = list(matrix.columns)
-
-        matrix["Overall CCA"] = (
-            matrix[co_columns].mean(axis=1)
-        )
-
-        matrix = matrix.round(2).reset_index()
-
-        st.session_state["final_matrix"] = matrix
-
-        st.session_state["finalized"] = True
-
-        st.success("CCA finalized successfully!")
-
-        st.rerun()
-
-
-# ============================================================
-# 22. FINAL CCA MATRIX
-# ============================================================
-
-if st.session_state.finalized:
-
-    st.divider()
-
-    st.header("Final CCA Matrix")
-
-    matrix = st.session_state["final_matrix"]
-
-    st.dataframe(
-        matrix,
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.metric(
-        "Total Students",
-        len(matrix)
-    )
-
-    # PDF EXPORT
-
-    pdf_data = create_pdf(
-        matrix,
-        department,
-        course,
-        course_code
-    )
-
-    st.download_button(
-        "Download Final CCA Matrix PDF",
-        data=pdf_data,
-        file_name="Final_CCA_Matrix.pdf",
-        mime="application/pdf",
-        use_container_width=True
-    )
-
-    # EXCEL EXPORT
-
-    final_excel = create_excel({
-
-        "Final CCA Matrix": matrix,
-
-        "Student Wise Results": st.session_state["generation_results"],
-
-        "Combined Configuration": st.session_state["edited_config"],
-
-        "Rescaled Results": st.session_state["rescaled_results"],
-
-        "Clubbing Results": st.session_state["clubbed_results"]
-
-    })
-
-    st.download_button(
-        "Download Final CCA Excel",
-        data=final_excel,
-        file_name="Final_CCA_Matrix.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
-
-
-# ============================================================
-# 23. FOOTER
-# ============================================================
-
-st.divider()
-
-st.caption(
-    "CCA Generation | Assessment Rescaling and CO Consolidation"
-)
